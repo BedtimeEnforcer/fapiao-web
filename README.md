@@ -11,7 +11,7 @@
 
 ## 下载与使用
 
-在 [Releases](https://github.com/BedtimeEnforcer/fapiao-web/releases) 下载 `报销助手.exe`，双击运行，无需安装 Python。当前便携版面向 **Windows 10/11 x64**，首次启动需要解压内部运行资源，可能稍慢。
+在 [Releases](https://github.com/BedtimeEnforcer/fapiao-web/releases) 下载 `BaoXiaoAssistant-v0.4.1-windows-x64.zip`，解压后双击 **报销助手.exe**，无需安装 Python。也可直接下载 `BaoXiaoAssistant.exe`，软件名称和功能相同。GitHub 会过滤全中文附件名，ZIP 用于保留中文 exe 文件名。当前便携版面向 **Windows 10/11 x64**，首次启动需要解压内部运行资源，可能稍慢。
 
 - 浏览器会自动打开 `http://127.0.0.1:8766/`，服务仅接受本机连接。
 - 控制台窗口用于维持服务；关闭窗口即退出软件。
