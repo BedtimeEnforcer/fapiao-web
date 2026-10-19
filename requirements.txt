@@ -1,0 +1,15 @@
+# 报销助手 — 运行时依赖
+# 安装：python -m pip install -r requirements.txt
+
+# Web 服务框架
+fastapi>=0.110.0
+uvicorn>=0.27.0
+python-multipart>=0.0.9   # 文件上传（拖拽方式）必需
+
+# ── 以下为 core/ 业务逻辑依赖（与桌面版完全一致）──
+pdfplumber>=0.11.0
+pypdf>=4.0.0
+reportlab>=4.0.0
+Pillow>=10.0.0
+openpyxl>=3.1.0
+pypdfium2>=4.30.0

@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark" data-edition="__APP_EDITION__">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>报销助手 · Web 版</title>
+<link rel="icon" type="image/svg+xml" href="/static/assets/favicon.svg">
+<link rel="mask-icon" href="/static/assets/favicon.svg" color="#3B5BDB">
+<link rel="stylesheet" href="/static/css/theme.css?v=__ASSET_VERSION__">
+<link rel="stylesheet" href="/static/css/app.css?v=__ASSET_VERSION__">
+<!-- 外围特效层（v3）：背景光晕 / 漫游光斑 / 扫描带 / 粒子星野 / 工具条扫光。
+     放在 theme.css 与 app.css **之后**，保证能覆盖外壳容器定位。
+     只做装饰，不参与任何布局，不改动 app.js 依赖的任何 id / class。 -->
+<link rel="stylesheet" href="/static/css/fx.css?v=__ASSET_VERSION__">
+</head>
+<body>
+
+<!-- ══ 背景层（v3 特效）：全部 position:fixed / z-index:0 / pointer-events:none
+     规格与动画在 css/fx.css；内容层由 fx.css 把 .shell 抬到 z-index:1。
+     这一层里**不要**放任何需要点击或聚焦的元素。 ══ -->
+<div class="bg" aria-hidden="true"></div>
+<div class="orb o1" aria-hidden="true"></div>
+<div class="orb o2" aria-hidden="true"></div>
+<div class="orb o3" aria-hidden="true"></div>
+<canvas id="bgCanvas" aria-hidden="true"></canvas>
+
+<div class="shell">
+
+  <!-- ══ 主区（v0.5：左侧 72px 图标导航栏已整块下线 —— 用户 2026-10-11 选 A）══
+       工作台是唯一主界面，「设置」入口搬到顶栏右上角的齿轮按钮（#btnSettings）。
+       ⚠️ `#view-merge` / `#view-generic` 等视图容器**必须保留**：五个旧模块仍由
+       `switchModule('merge' | 'train' | …)` 从代码侧切过去，`tests/verify_ui.mjs`
+       会直接调这些 key。 -->
+  <div class="main" id="mainArea">
+
+    <!-- 顶栏 -->
+    <header class="topbar">
+      <div class="page-title">
+        <span class="accent-bar"></span>
+        <h2 id="pageTitle">发票工作台</h2>
+        <span class="sub" id="pageSub">投一次，在同一张列表上做完核对 / 重命名 / 合并</span>
+      </div>
+      <div class="topbar-actions">
+        <!-- 库占用（v0.6）：文案形如「发票库 124 张 · 18 MB」，**点击进发票库**。
+             数字来自 GET /api/vault/stats，页面初始化时拉一次、入库/删除后刷新；
+             库为空写「发票库 空」，接口还没上线（404）写「发票库 不可用」——
+             三种状态都不留一个算不出来的假数字（这是当初撤掉占位符的原因）。
+             ⚠️ 它是真 button 而非 span：它自己就是入口，键盘要能 Tab 到、回车要能进。 -->
+        <button type="button" class="vault-stat" id="vaultStat" title="查看发票库">发票库 —</button>
+        <button class="icon-btn" id="themeBtn" title="切换明暗主题">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+               stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
+        </button>
+        <!-- 设置入口（v0.5）：原来挂在左侧栏的 `.nav-item[data-key=settings]` 上，
+             左侧栏整块下线后搬到这里。沿用主题按钮同一套 `.icon-btn`，
+             当前模块 == settings 时加 `.active` 选中态（由 switchModule() 统一切换）。
+             ⚠️ 齿轮 SVG 是从原左侧栏那个按钮上**原样搬过来**的，没有重画。 -->
+        <button class="icon-btn" id="btnSettings" title="设置" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+               stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="6.4"/>
+            <circle cx="12" cy="12" r="2.6"/>
+            <path d="M18.4 12h3.2"/>
+            <path d="M16.53 16.53l2.26 2.26"/>
+            <path d="M12 18.4v3.2"/>
+            <path d="M7.47 16.53l-2.26 2.26"/>
+            <path d="M5.6 12H2.4"/>
+            <path d="M7.47 7.47L5.21 5.21"/>
+            <path d="M12 5.6V2.4"/>
+            <path d="M16.53 7.47l2.26-2.26"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <div class="body-row">
+      <div class="workspace">
+
+        <!-- 内容区 -->
+        <main class="content is-wb" id="content">
+
+          <!-- ══════════ 视图 0：发票工作台（v0.4 · R1 统一列表）══════════ -->
+          <div class="view wb" id="view-workbench">
+
+            <!-- 有数据时的 52px 工具条 -->
+            <div class="wb-bar" id="wbBar" hidden>
+              <input type="file" id="wbFileInput" multiple accept=".pdf,.ofd" hidden>
+              <span class="wb-tip" id="wbTip">拖入发票，或点右侧按钮添加</span>
+              <div class="wb-bar-actions">
+                <button class="btn" id="wbPickFiles">选择文件</button>
+                <button class="btn" id="wbPickFolder">选择文件夹</button>
+                <!-- 从发票库导入（v0.6）：不弹自定义弹窗，直接切到发票库视图，
+                     由用户在那里勾完再点「导入到工作台 (N)」。库为空时也照样切过去
+                     —— 那边有「工作台上跑完一批发票，它们会自动进这里」的空态说明。 -->
+                <button class="btn" id="wbVaultImport">从发票库导入</button>
+                <button class="btn btn-ghost" id="wbClear">清空</button>
+              </div>
+            </div>
+
+            <!-- KPI 条：**常驻**（无数据时也显示 0 张 / ￥0.00 / 通过 0 / 待确认 0）-->
+            <div class="wb-kpis" id="wbKpis"></div>
+
+            <!-- 无数据时的空状态：投放条 + 三张信息卡（仪表盘式，不撑满全屏、不留死表头）-->
+            <div class="wb-empty" id="wbEmpty">
+              <div class="we-hero" id="weHero">
+                <div class="we-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+                       stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 16V4"/><path d="M7 9l5-5 5 5"/>
+                    <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>
+                  </svg>
+                </div>
+                <div class="we-hero-text">
+                  <h3>把发票拖到这里，或点击选择</h3>
+                  <p>支持 PDF / OFD · 可多选 · 也可直接选整个文件夹</p>
+                </div>
+                <div class="dz-actions">
+                  <button class="btn btn-primary" id="wePickFiles">选择文件</button>
+                  <button class="btn" id="wePickFolder">选择文件夹</button>
+                </div>
+              </div>
+
+              <div class="we-cards">
+                <section class="we-card">
+                  <h4>支持的票种</h4>
+                  <ul class="we-list">
+                    <li class="we-gl-row"><span class="we-gl">交通费</span></li>
+                    <li class="we-sub"><span class="kdot" data-cat="train"></span><span class="we-kind">火车票</span><span class="we-desc">铁路电子客票</span></li>
+                    <li class="we-sub"><span class="kdot" data-cat="air"></span><span class="we-kind">机票</span><span class="we-desc">航空客运电子发票</span></li>
+                    <li class="we-sub"><span class="kdot" data-cat="taxi"></span><span class="we-kind">客运服务</span><span class="we-desc">出租车 / 网约车 / 客车 / 大巴</span></li>
+                    <li><span class="kdot" data-cat="hotel"></span><span class="we-kind">住宿票</span><span class="we-desc">酒店 / 住宿增值税发票</span></li>
+                    <li><span class="kdot" data-cat="food"></span><span class="we-kind">餐饮票</span><span class="we-desc">餐饮服务 / 餐费发票</span></li>
+                    <li><span class="kdot" data-cat="other"></span><span class="we-kind">其他</span><span class="we-desc">办公 / 其他普通发票</span></li>
+                    <li><span class="kdot" data-cat="noninvoice"></span><span class="we-kind">非电子发票</span><span class="we-desc">行程单 / 报销单据，不计入合计</span></li>
+                  </ul>
+                </section>
+
+                <section class="we-card">
+                  <h4>三步出结果</h4>
+                  <ol class="we-steps">
+                    <li><span class="we-step-n">1</span><span class="we-step-t">投放发票</span><span class="we-step-d">拖入，或选择文件 / 文件夹</span></li>
+                    <li><span class="we-step-n">2</span><span class="we-step-t">核对 · 重命名</span><span class="we-step-d">在同一张列表上完成，异常会标出</span></li>
+                    <li><span class="we-step-n">3</span><span class="we-step-t">生成行程单 / 合并 PDF</span><span class="we-step-d">一键导出到指定目录</span></li>
+                  </ol>
+                </section>
+
+                <!-- v0.6：发票库已上线 —— 去掉「即将上线」徽标，整张卡可点进发票库。
+                     用 role=button + tabindex=0 而**不是**真 button 元素：卡里有一个
+                     ul 列表，套进 button 是非法嵌套（浏览器会把它拆开）。
+                     Enter/Space 与 :focus-visible 的接线在 bindWorkbench() 里。 -->
+                <section class="we-card we-card-link" id="weVaultCard" role="button" tabindex="0"
+                         aria-label="打开发票库">
+                  <h4>发票库</h4>
+                  <p class="we-note">历史发票自动留存，按票种归类，可检索、可删除。</p>
+                  <ul class="we-list plain">
+                    <li><span class="we-kind">自动留存</span><span class="we-desc">处理过的发票不再丢失</span></li>
+                    <li><span class="we-kind">按票种归类</span><span class="we-desc">火车 / 住宿 / 机票一目了然</span></li>
+                    <li><span class="we-kind">检索与删除</span><span class="we-desc">按日期 / 销售方 / 金额查找</span></li>
+                  </ul>
+                </section>
+              </div>
+
+              <div class="we-foot">
+                <span class="we-foot-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+                       stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 2v2"/><path d="M5 8H3"/><path d="M21 8h-2"/>
+                    <path d="M12 7a5 5 0 0 1 3 9v2H9v-2a5 5 0 0 1 3-9z"/>
+                  </svg>
+                </span>
+                <span class="we-foot-t">小贴士</span>
+                <span class="we-foot-d">同一次报销的发票可以一起投放 —— 工作台会自动解析、去重与归类；解析存疑的行会标出来提醒你核对。</span>
+              </div>
+
+              <!-- 首次运行提示条：**只在空状态里**。有数据时整块 #wbEmpty 被
+                   app.js 隐藏（el.wbEmpty.hidden = has），所以它不会占表格的
+                   行高 —— 工作台那条「一屏 ≥25 行」的断言不受影响。
+                   默认 hidden，由 JS 按「抬头是否填过」决定是否露出来。 -->
+              <div class="se-banner" id="seBanner" hidden>
+                <span class="se-banner-t">先填一次报销抬头</span>
+                <span class="se-banner-d">核对这一步要拿它比对购买方名称与税号；填了就记住，以后不用再填。</span>
+                <button class="btn btn-ghost" id="seBannerClose">知道了</button>
+                <button class="btn" id="seBannerGo">去设置</button>
+              </div>
+            </div>
+
+            <!-- 筛选栏（常驻一行）-->
+            <div class="wb-filters" id="wbFilters" hidden>
+              <div class="chips" id="wbChips"></div>
+              <div class="spacer"></div>
+              <!-- 用户 2026-10-11 第 1 条：原来是「全部日期 / 近 30 天 / 近 90 天 /
+                   今年」四个档位的下拉，他明确不要这些预设档，要**直接给起止日期**
+                   （格式「年月日」）。空 = 该端不限。
+                   第 ⑧② 条：原生 date 控件的弹出面板由浏览器绘制、CSS 改不了，
+                   所以这两个输入框加 readonly + inputmode="none" ——
+                   `.value` 语义一个字没变（仍是 'YYYY-MM-DD'，仍对 change 事件响应，
+                   脚本赋值 + dispatchEvent(new Event('change')) 照常生效），
+                   只是点它们不再弹原生面板，改弹 app.js 自绘的日历浮层（.dt-pop）。 -->
+              <div class="date-range" title="按开票日期区间筛选">
+                <input type="text" id="wbDateFrom" aria-label="开始日期，格式 YYYY-MM-DD" placeholder="YYYY-MM-DD" readonly inputmode="none">
+                <span class="dr-sep">至</span>
+                <input type="text" id="wbDateTo" aria-label="结束日期，格式 YYYY-MM-DD" placeholder="YYYY-MM-DD" readonly inputmode="none">
+              </div>
+              <select id="wbStatus" title="按信息完整度筛选">
+                <option value="all">全部状态</option>
+                <option value="complete">信息完整</option>
+                <option value="missing">信息待补充</option>
+              </select>
+              <div class="mini-search">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>
+                </svg>
+                <input type="text" id="wbSearch" placeholder="模糊搜索"
+                       title="模糊搜索：文件名 / 销售方 / 购买方 / 金额 / 日期 / 车次 / 车站 / 乘客 / 酒店名 等全部已解析字段">
+              </div>
+              <button class="btn btn-ghost" id="wbReset" title="重置全部筛选">重置</button>
+            </div>
+
+            <!-- 主表格（占满剩余高度，行高 32px）-->
+            <div class="wb-grid-wrap" id="wbGridWrap">
+              <table class="grid" id="wbGrid">
+                <thead id="wbThead">
+                  <tr>
+                    <th class="col-pick"><input type="checkbox" id="wbPickAll" title="全选 / 取消全选"></th>
+                    <th class="col-dot"></th>
+                    <th data-sort="filename" class="sortable col-fname">文件名</th>
+                    <th class="col-type">发票类型</th>
+                    <th data-sort="date" class="sortable col-date">日期</th>
+                    <th data-sort="seller" class="sortable col-seller">销售方</th>
+                    <th data-sort="amount" class="sortable col-amount">金额</th>
+                    <th data-sort="parse_status" class="sortable col-check">解析状态</th>
+                    <th class="col-info">信息完整度</th>
+                    <th class="col-detail-toggle"><button type="button" class="icon-btn" id="wbDetailToggle"
+                        title="折叠详情页" aria-label="折叠详情页" aria-controls="detailPanel" aria-expanded="true">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                           stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                    </button></th>
+                  </tr>
+                </thead>
+                <tbody id="wbBody"></tbody>
+              </table>
+            </div>
+
+          </div>
+
+          <!-- ══════════ 视图 1：发票合并（专有布局，过渡期保留）══════════ -->
+          <div class="view" id="view-merge" hidden>
+
+            <section class="dropzone" id="dropzone">
+              <input type="file" id="fileInput" multiple accept=".pdf,.ofd" hidden>
+              <div class="dz-inner">
+                <div class="dz-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+                       stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 16V4"/><path d="M7 9l5-5 5 5"/>
+                    <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>
+                  </svg>
+                </div>
+                <p class="dz-title">把发票拖到这里，或点击选择</p>
+                <p class="dz-hint">支持 PDF / OFD，可多选；也可选整个文件夹</p>
+                <div class="dz-actions">
+                  <button class="btn btn-primary" id="pickFiles">选择文件</button>
+                  <button class="btn" id="pickFolder">选择文件夹</button>
+                </div>
+              </div>
+            </section>
+
+            <section class="stats" id="stats" hidden>
+              <div class="stat">
+                <span class="stat-label">发票张数</span>
+                <span class="stat-value" id="statCount">0</span>
+              </div>
+              <div class="stat">
+                <span class="stat-label">金额合计</span>
+                <span class="stat-value accent" id="statAmount">￥0.00</span>
+              </div>
+              <div class="stat">
+                <span class="stat-label">预计页数</span>
+                <span class="stat-value" id="statPages">0</span>
+              </div>
+              <div class="stat">
+                <span class="stat-label">类型分布</span>
+                <span class="stat-value small" id="statTypes">—</span>
+              </div>
+            </section>
+
+            <section class="card table-card" id="tableCard" hidden>
+              <div class="card-head">
+                <h2>待合并的发票</h2>
+                <div class="card-head-actions">
+                  <div class="search">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+                         stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>
+                    </svg>
+                    <input type="text" id="searchInput" placeholder="搜索文件名 / 销售方">
+                  </div>
+                  <button class="btn btn-ghost" id="clearBtn">清空</button>
+                </div>
+              </div>
+
+              <div class="table-wrap">
+                <table class="grid" id="grid">
+                  <thead>
+                    <tr>
+                      <th class="col-idx">#</th>
+                      <th data-sort="filename" class="sortable">文件名</th>
+                      <th data-sort="type" class="sortable col-type">类型</th>
+                      <th data-sort="date" class="sortable col-date">日期</th>
+                      <th data-sort="seller" class="sortable col-seller">销售方</th>
+                      <th data-sort="amount" class="sortable col-amount">金额</th>
+                      <th class="col-del"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="gridBody"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="card out-card" id="outCard" hidden>
+              <div class="out-row">
+                <label class="out-label">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+                       stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                  </svg>
+                  输出目录
+                </label>
+                <input type="text" class="out-input" id="outDir" placeholder="默认输出到桌面\发票合并输出">
+                <button class="btn btn-ghost" id="pickOutDir">选择目录</button>
+              </div>
+            </section>
+
+          </div>
+
+          <!-- ══════════ 视图 2：通用模块（火车票 / 住宿票 / 核对 / 重命名）
+               过渡期保留：交互骨架与 v0.3 完全一致，只是按方向 B 重新贴皮。 -->
+          <div class="view" id="view-generic" hidden>
+
+            <section class="dropzone" id="gDropzone">
+              <input type="file" id="gFileInput" multiple accept=".pdf,.ofd" hidden>
+              <div class="dz-inner">
+                <div class="dz-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+                       stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 16V4"/><path d="M7 9l5-5 5 5"/>
+                    <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>
+                  </svg>
+                </div>
+                <p class="dz-title" id="gDzTitle">把发票拖到这里，或点击选择</p>
+                <p class="dz-hint" id="gDzHint">支持 PDF / OFD，可多选；也可选整个文件夹</p>
+                <div class="dz-actions">
+                  <button class="btn btn-primary" id="gPickFiles">选择文件</button>
+                  <button class="btn" id="gPickFolder">选择文件夹</button>
+                </div>
+              </div>
+            </section>
+
+            <!-- 核对模块专有：预设抬头 / 税号 -->
+            <section class="card extra-panel" id="gCheckPanel" hidden>
+              <div class="extra-row">
+                <label for="gExpName">购买方名称</label>
+                <input type="text" id="gExpName" placeholder="公司全称">
+              </div>
+              <div class="extra-row">
+                <label for="gExpTax">纳税人识别号</label>
+                <input type="text" id="gExpTax" placeholder="统一社会信用代码">
+              </div>
+              <p class="extra-hint">至少填一项；两项都填则同时比对，都用归一化后的值比较。</p>
+            </section>
+
+            <!-- 重命名模块专有：处理方式 -->
+            <section class="card extra-panel" id="gRenamePanel" hidden>
+              <div class="extra-row">
+                <label>处理方式</label>
+                <div class="radio-group">
+                  <label class="radio">
+                    <input type="radio" name="renameMode" value="inplace" checked>
+                    <span>原位重命名<em>（改动原文件名）</em></span>
+                  </label>
+                  <label class="radio">
+                    <input type="radio" name="renameMode" value="copy">
+                    <span>复制为新文件<em>（保留原件）</em></span>
+                  </label>
+                </div>
+              </div>
+            </section>
+
+            <section class="stats" id="gStats" hidden></section>
+
+            <section class="card table-card" id="gTableCard" hidden>
+              <div class="card-head">
+                <h2 id="gTableTitle">明细</h2>
+                <div class="card-head-actions">
+                  <div class="search">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+                         stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>
+                    </svg>
+                    <input type="text" id="gSearchInput" placeholder="搜索">
+                  </div>
+                  <button class="btn btn-ghost" id="gClearBtn">清空</button>
+                </div>
+              </div>
+
+              <div class="table-wrap">
+                <table class="grid" id="gGrid">
+                  <thead id="gThead"></thead>
+                  <tbody id="gBody"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="card out-card" id="gOutCard" hidden>
+              <div class="out-row">
+                <label class="out-label">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+                       stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                  </svg>
+                  输出目录
+                </label>
+                <input type="text" class="out-input" id="gOutDir" placeholder="默认保存在桌面\发票处理输出（保存时创建）">
+                <button class="btn btn-ghost" id="gPickOutDir">选择目录</button>
+              </div>
+            </section>
+
+          </div>
+
+          <!-- ══════════ 视图 3：设置（v0.4 批次 3 新增）
+               只放结构，逻辑由 app.js 的另一位工程师接管。
+               下面所有 id 是与 JS 的**冻结契约**：改名 / 挪位置都会让保存读不回来。
+               布局：每张卡片「左列表单 + 右列说明」，<900px 落成单列（见 app.css .se- 段）。 -->
+          <div class="view" id="view-settings" hidden>
+
+            <div class="se-wrap">
+              <div class="se-inner">
+
+                <header class="se-head">
+                  <span class="se-head-bar" aria-hidden="true"></span>
+                  <div class="se-head-text">
+                    <h2 class="se-title">设置</h2>
+                    <p class="se-sub">抬头、输出目录与执行偏好都在这；改完即存，下次打开还在。</p>
+                  </div>
+                  <!-- 2026-10-11：左侧栏整个删除后，「设置」原本唯一的返回出口（那个导航项）
+                       也没了。顶栏齿轮可以再点一次回工作台，但用户不是技术用户，
+                       光靠「再点一下同一个图标」不够显眼，所以这里给第二条出口。 -->
+                  <button type="button" class="se-back" id="seBack">← 返回工作台</button>
+                </header>
+
+                <div class="se-grid">
+
+                  <!-- 1) 报销抬头 -->
+                  <section class="se-card">
+                    <h3 class="se-card-t">报销抬头</h3>
+                    <div class="se-card-body">
+                      <div class="se-form">
+                        <div class="se-field">
+                          <label for="seName">购买方名称</label>
+                          <input type="text" id="seName" placeholder="公司全称" autocomplete="off">
+                        </div>
+                        <div class="se-field">
+                          <label for="seTax">纳税人识别号</label>
+                          <input type="text" id="seTax" placeholder="统一社会信用代码" autocomplete="off">
+                        </div>
+                        <p class="se-hint" id="seHintHeader" hidden>还没填抬头 —— 核对这一步会标成「未设置核对预设」，填一次就记住。</p>
+                      </div>
+                      <div class="se-note">
+                        <p class="se-note-d">核对这一步用它比对购买方名称与税号；填一次就记住，下次打开还在。</p>
+                      </div>
+                    </div>
+                  </section>
+
+                  <!-- 2) 输出目录 -->
+                  <section class="se-card">
+                    <h3 class="se-card-t">输出目录</h3>
+                    <div class="se-card-body">
+                      <div class="se-form">
+                        <div class="se-field">
+                          <label for="seOutDir">输出目录</label>
+                          <input type="text" id="seOutDir" class="se-mono"
+                                 placeholder="默认保存在桌面\发票处理输出（保存时创建）" spellcheck="false">
+                        </div>
+                        <div class="se-acts">
+                          <button class="btn" id="sePickDir">选择文件夹</button>
+                          <button class="btn btn-ghost" id="seOpenDir">打开目录</button>
+                        </div>
+                      </div>
+                      <div class="se-note">
+                        <p class="se-note-d">重命名后的文件、合并 PDF、行程单都放这里；留空则用系统默认。</p>
+                      </div>
+                    </div>
+                  </section>
+
+                  <!-- 3) 执行偏好：未开放的选项一律 disabled + 说明原因，不假装能用 -->
+                  <section class="se-card">
+                    <h3 class="se-card-t">执行偏好</h3>
+                    <div class="se-card-body">
+                      <div class="se-form">
+                        <div class="se-field">
+                          <span class="se-lab">重命名方式</span>
+                          <div class="se-seg-group" id="seRenameMode">
+                            <button class="se-seg" id="seRenameCopy" data-v="copy">复制原件（原件不动）</button>
+                            <button class="se-seg" id="seRenameMove" data-v="inplace">修改原件</button>
+                          </div>
+                        </div>
+                        <div class="se-field">
+                          <span class="se-lab">失败策略</span>
+                          <div class="se-seg-group" id="sePolicy">
+                            <button class="se-seg" id="sePolicySkip" data-v="skip">跳过继续</button>
+                            <button class="se-seg" id="sePolicyStop" data-v="stop" disabled title="暂未开放：目前只能在步骤之间停">停下问我</button>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="se-note">
+                        <p class="se-note-d">「复制原件」= 原件一个字节都不动，新名字的副本写进输出目录。</p>
+                        <p class="se-note-d">「修改原件」= <b>直接改磁盘上原件自己的文件名</b>；文件内容不动，也不会多出第二份副本。</p>
+                        <p class="se-note-d">置灰的那项是当前流水线做不到的事 —— 「停下问我」只能在步骤之间停，所以先不提供。</p>
+                      </div>
+                    </div>
+                  </section>
+
+                  <!-- 4) 外观 -->
+                  <section class="se-card">
+                    <h3 class="se-card-t">外观</h3>
+                    <div class="se-card-body">
+                      <div class="se-form">
+                        <div class="se-field">
+                          <span class="se-lab">主题</span>
+                          <div class="se-seg-group" id="seTheme">
+                            <button class="se-seg" id="seThemeDark" data-v="dark">深色</button>
+                            <button class="se-seg" id="seThemeLight" data-v="light">浅色</button>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="se-note">
+                        <p class="se-note-d">顶栏右上角的月亮图标也能随时切换，两处状态是同一个。</p>
+                      </div>
+                    </div>
+                  </section>
+
+                  <!-- 5) 关于 -->
+                  <section class="se-card">
+                    <h3 class="se-card-t">关于</h3>
+                    <div class="se-card-body">
+                      <div class="se-form">
+                        <div class="se-kv">
+                          <span class="se-k">版本</span>
+                          <span class="se-v" id="seVer">—</span>
+                        </div>
+                        <div class="se-kv">
+                          <span class="se-k">服务地址</span>
+                          <span class="se-v se-mono" id="sePath">—</span>
+                        </div>
+                        <div class="se-kv">
+                          <span class="se-k">状态</span>
+                          <span class="se-saved" id="seSaved" hidden>已保存</span>
+                        </div>
+                      </div>
+                      <div class="se-note">
+                        <p class="se-note-d">设置只存在这台电脑上；改完立即生效，不用重启服务。</p>
+                      </div>
+                    </div>
+                  </section>
+
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- ══════════ 视图：发票库（v0.6）══════════
+               与 #view-workbench / #view-settings 并列，靠 hidden 属性由
+               switchModule('vault') 切换（写法照抄设置页那一支）。
+               表格**不加任何发光 / 阴影 / filter** —— 用户的硬性要求：表格本体保持
+               密集可读，特效只能在外围（KPI 卡那四个格子还是工作台那套）。
+               ⚠️ 行高 32px 与 12.5px 字号全部由全局 `table.grid` / `--row-h` /
+               `--fs-cell` 提供，这里一个都不覆盖。 -->
+          <div class="view" id="view-vault" hidden>
+            <div class="vault-inner">
+
+              <!-- 页头：与设置页同一套（.se-head / .se-head-bar / .se-title /
+                   .se-sub），返回按钮直接复用设置页的 .se-back。 -->
+              <header class="se-head">
+                <span class="se-head-bar"></span>
+                <div class="se-head-text">
+                  <h2 class="se-title">发票库</h2>
+                  <p class="se-sub">库是软件自己留的副本，磁盘原件不动</p>
+                </div>
+                <button type="button" class="se-back" id="vaultBack">← 返回工作台</button>
+              </header>
+
+              <!-- 概览条：与工作台 .wb-kpis / .kpi 同一套结构与类
+                   （库内 N 张 / 占用 X MB / 票种分布 / 最近入库）-->
+              <div class="wb-kpis" id="vaultKpis"></div>
+
+              <!-- 工具条：模糊搜索 + 起止日期 + 票种 chips + 右侧三个操作 -->
+              <div class="vault-bar" id="vaultBar">
+                <div class="mini-search" title="搜文件名 / 销售方 / 购买方 / 发票号">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                       stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/>
+                  </svg>
+                  <input id="vaultSearch" placeholder="模糊搜索" aria-label="模糊搜索">
+                </div>
+                <div class="date-range" title="按开票日期区间筛选">
+                  <input type="text" id="vaultFrom" aria-label="开始日期，格式 YYYY-MM-DD" placeholder="YYYY-MM-DD" readonly inputmode="none">
+                  <span class="dr-sep">至</span>
+                  <input type="text" id="vaultTo" aria-label="结束日期，格式 YYYY-MM-DD" placeholder="YYYY-MM-DD" readonly inputmode="none">
+                </div>
+                <div class="chips" id="vaultChips"></div>
+                <div class="spacer"></div>
+                <button class="btn btn-err" id="vaultDelSel" disabled>删除选中 (0)</button>
+                <button class="btn btn-ghost" id="vaultClearAll">一键清空</button>
+                <button class="btn btn-primary" id="vaultImport" disabled>导入到工作台 (0)</button>
+              </div>
+
+              <!-- 主表格：两处列表共用信息完整度口径。 -->
+              <div class="vault-grid-wrap" id="vaultGridWrap">
+                <table class="grid" id="vaultGrid">
+                  <thead id="vaultThead">
+                    <tr>
+                      <th class="col-pick"><input type="checkbox" id="vaultPickAll" title="全选当前 200 行"></th>
+                      <th class="col-kind">票种</th>
+                      <th>文件名</th>
+                      <th class="col-date">开票日期</th>
+                      <th class="col-seller">销售方</th>
+                      <th class="col-amount">金额</th>
+                      <th class="col-info">信息完整度</th>
+                      <th class="col-date">入库时间</th>
+                      <th class="col-op">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="vaultBody"></tbody>
+                </table>
+              </div>
+
+              <div class="vault-foot" id="vaultFoot" hidden>
+                <span id="vaultPageInfo"></span>
+                <button type="button" class="btn" id="vaultPrev">上一页</button>
+                <button type="button" class="btn" id="vaultNext">下一页</button>
+              </div>
+
+              <!-- 空态 / 不可用态：两块互斥，hidden 都由 JS 控制 -->
+              <div class="vault-blank" id="vaultEmpty" hidden>
+                <div class="vb-card">
+                  <span class="vb-t">发票库还是空的</span>
+                  <p class="vb-d">工作台上跑完一批发票，它们会自动进这里：按票种归类，可检索、可删除；删的只是库内副本。</p>
+                  <button class="btn btn-primary" id="vaultGoWork">回工作台投一批</button>
+                </div>
+              </div>
+              <div class="vault-blank" id="vaultUnavailable" hidden>
+                <div class="vb-card">
+                  <span class="vb-t">发票库还不可用</span>
+                  <p class="vb-d">后端 <code>/api/vault/*</code> 接口还没就位（返回 404）。页面本身照常能用，接口上线后点「重试」即可。</p>
+                  <button class="btn" id="vaultRetry">重试</button>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+        </main>
+      </div>
+
+      <!-- ══ 右侧详情侧栏（工作台专属，默认 260px，可折叠）══ -->
+      <aside class="detail" id="detailPanel" hidden>
+        <div class="detail-head">
+          <span class="dt-title" id="detailTitle">详情</span>
+          <button class="icon-btn" id="detailToggle" title="折叠详情侧栏">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 18l6-6-6-6"/>
+            </svg>
+          </button>
+        </div>
+        <div class="detail-body" id="detailBody"></div>
+      </aside>
+    </div>
+
+    <!-- 底部操作栏：工作台流水线（v0.4 批次 2 · v0.7 按用户第 ⑨ 条重排
+         · 2026-10-12 第 ⑩ 轮：4 个开关 + 2 个动作按钮收成**同一横排**）
+         结构：
+           #wbProg（.wb-prog，默认 hidden）全屏解析进度（第 ⑦/⑩ 条）
+           .wb-bars 单横排：
+             左 = #wbToggles（.wb-toggles）4 个功能卡，一列排开、靠左
+             右 = #wbRunbox（.wb-runbox）执行区：已选统计 + 执行说明 + 开始(N) / 生成行程单
+                  （两颗按钮靠右）
+         ⚠️ 开关的**排列顺序与执行顺序无关**：后端与前端都按刚性固定的
+            「查重 → 核对 → 重命名 → 合并」跑（PIPELINE_ORDER）。挪位置不改任何逻辑。
+            （原来每个开关上的 1/2/3/4 序号徽章与前端方框已按用户第 ⑩ 条删除。） -->
+    <footer class="actionbar" id="wbActionbar" hidden>
+
+      <!-- 导入/解析进度：先埋 job_id，再每 400ms 轮询 /api/pool/scan/status
+           （用户第 ⑦ 条「100 张不知道到第几张」）。后端没上线就自动退回转圈遮罩。 -->
+      <div class="wb-prog" id="wbProg" hidden>
+        <span class="wb-prog-pct" id="wbProgPct">0%</span>
+        <div class="wb-prog-track"><div class="wb-prog-bar" id="wbProgBar"></div></div>
+        <span class="wb-prog-file" id="wbProgFile"></span>
+        <span class="wb-prog-text" id="wbProgText"></span>
+      </div>
+
+      <div class="wb-bars">
+        <div class="wb-toggles" id="wbToggles">
+          <button type="button" class="wb-toggle" id="wbTglDedup" data-act="dedup"
+                  aria-pressed="false" title="同票只保留代表件，其余标记为跳过（第 1 步）">查重</button>
+          <button type="button" class="wb-toggle" id="wbTglCheck" data-act="check"
+                  aria-pressed="true" title="用左侧预设的抬头 / 税号比对购买方（第 2 步）">核对抬头</button>
+          <button type="button" class="wb-toggle" id="wbTglRename" data-act="rename"
+                  aria-pressed="false" title="按票面内容生成新文件名（第 3 步）">重命名</button>
+          <button type="button" class="wb-toggle" id="wbTglMerge" data-act="merge"
+                  aria-pressed="false" title="把代表件合并成一个 PDF（第 4 步）">合并 PDF</button>
+        </div>
+
+        <div class="wb-runbox" id="wbRunbox">
+          <div class="action-info" id="wbActionInfo">已选 0 张 · 合计 ￥0.00</div>
+          <div class="action-info wb-runnote" id="wbRunNote"></div>
+          <div class="wb-runbtns">
+            <button class="btn btn-action" id="wbRunBtn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                   stroke-linecap="round" stroke-linejoin="round">
+                <path d="M5 3l14 9-14 9V3z"/>
+              </svg>
+              <span id="wbRunLabel">开始 (0)</span>
+            </button>
+            <div class="wb-trip-control">
+              <button class="btn" id="wbTripBtn" type="button" aria-expanded="false"
+                      aria-controls="wbTripMenu" aria-haspopup="true">生成行程单</button>
+              <div class="wb-trip-menu" id="wbTripMenu" role="group" aria-label="选择行程单生成范围" hidden>
+                <button type="button" data-trip-scope="all">
+                  <strong>工作台全部交通与住宿票</strong><span>不受当前筛选和勾选影响</span>
+                </button>
+                <button type="button" data-trip-scope="selected">
+                  <strong>仅当前勾选的行程票</strong><span>其他票种自动排除</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </footer>
+
+    <!-- 底部操作栏：发票合并 -->
+    <footer class="actionbar" id="actionbar" hidden>
+      <div class="action-info" id="actionInfo">已选 0 张发票</div>
+      <button class="btn btn-action" id="runBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+             stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 3l14 9-14 9V3z"/>
+        </svg>
+        开始合并
+      </button>
+    </footer>
+
+    <!-- 底部操作栏：通用模块 -->
+    <footer class="actionbar" id="gActionbar" hidden>
+      <div class="action-info" id="gActionInfo">已选 0 张</div>
+      <button class="btn btn-action" id="gRunBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+             stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 3l14 9-14 9V3z"/>
+        </svg>
+        <span id="gRunLabel">开始</span>
+      </button>
+    </footer>
+
+  </div>
+
+</div>
+
+<!-- 进度遮罩 -->
+<div class="overlay" id="overlay" hidden>
+  <div class="overlay-box">
+    <div class="spinner"></div>
+    <p id="overlayText">正在解析发票…</p>
+  </div>
+</div>
+
+<!-- 结果对话框 -->
+<div class="modal" id="resultModal" hidden>
+  <div class="modal-box">
+    <div class="modal-icon ok" id="resultIcon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+           stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+    </div>
+    <h3 id="resultTitle">合并完成</h3>
+    <div class="modal-body" id="resultBody"></div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" id="openFolderBtn">打开输出目录</button>
+      <button class="btn btn-ghost" id="closeModalBtn">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- 轻提示 -->
+<div class="toast-wrap" id="toastWrap"></div>
+
+<script src="/static/js/app.js?v=__ASSET_VERSION__"></script>
+<script src="/static/js/journey.js?v=__ASSET_VERSION__"></script>
+<script src="/static/js/generic.js?v=__ASSET_VERSION__"></script>
+<script src="/static/js/settings.js?v=__ASSET_VERSION__"></script>
+<script src="/static/js/workbench.js?v=__ASSET_VERSION__"></script>
+<!-- 发票库视图依赖 app.js 的通用状态与工具；主界面在 DOMContentLoaded 时统一接线。 -->
+<script src="/static/js/vault.js?v=__ASSET_VERSION__"></script>
+<!-- 粒子星野（#bgCanvas）。零依赖、独立文件，放在 app.js 之后：
+     它与 app.js 无任何依赖关系，挂最后可以让主逻辑先跑完。 -->
+<script src="/static/js/fx.js?v=__ASSET_VERSION__"></script>
+</body>
+</html>

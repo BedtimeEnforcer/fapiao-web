@@ -1,0 +1,303 @@
+/* ==========================================================================
+   theme.css — 设计令牌 v3（v0.4 · 方向 B「数据仪表盘风」+ 行程单视觉语言）
+
+   为什么换掉 v2 的观感
+   --------------------
+   v0.4 原令牌层是「近纯色中性黑 + 单一冷蓝强调」，克制但寡淡。用户对页面
+   UI 不满意，明确要「火车票行程页 / 住宿票行程页」那种**色彩绚烂、高科技感、
+   特效足**的风格。行程单那几页的视觉语言其实只有一份源头：
+   `server/core/report_html.py` 的 SHARED_CSS + 各模块换的一组 accent。
+
+   本文件把那份语言（蓝黑底、霓虹渐变、发光、遥测动效）提炼成令牌搬进来：
+
+     · 底色由**中性黑**改成**蓝黑四层**（bg-from / bg-to / panel / map-fill）
+     · 主色三件套改为行程单页的系统：天蓝 + 亮端 + 霓虹青
+     · 新增渐变 / 发光 / 卡片阴影 / 字阶 / 动效曲线令牌
+     · 紧凑排版**不变**：控件 30px、表格行高 32px、表头 12.5px
+     · 明暗双主题：深色为主，浅色**不是反色**（暖纸白 + 深色主色 + 发光换实现）
+
+   主色沿革（留档）
+   ----------------
+   用户先否决了旧版的霓虹金 `#F59E0B`（原话「太扎眼了太丑」），
+   在三个候选（冰青 / 天蓝 / 紫罗兰）中**选定天蓝**（2026-10-11 00:15）。
+   权威视觉源：`C:\Users\Public\Desktop\UI风格样板-v3-配色B-天蓝.html`。
+
+   约定
+   ----
+   组件 CSS（app.css）里【禁止】写死十六进制色值，一律引用此处变量。
+   ========================================================================== */
+
+:root {
+  /* ── 尺寸令牌（紧凑栅格，与 v0.4 一致，**不要动**）────────── */
+  /* v0.5：左侧图标导航整块下线，这一列宽度归零。令牌**保留**（值 0px），
+     避免任何还在引用它的地方炸掉；新的消费处不要再加。 */
+  --nav-w: 0px;
+  --topbar-h: 44px;
+  --detail-w: 260px;        /* 右侧详情侧栏默认宽度（可折叠）*/
+  --row-h: 32px;            /* 主表格行高 —— 一次可见 25–30 行的关键 */
+  --h-ctl: 30px;            /* 输入 / 下拉 / 小按钮 */
+  --h-btn: 30px;
+  --h-bar: 68px;            /* 底部执行栏高度。沿革：52 → 56（v0.4 批次 2，两行
+                               各 26px + 1px 分隔线）→ **68（v0.5，用户 2026-10-11
+                               第 7 条：底栏按钮「太小太局促太简陋」，要加大）**。
+                               取舍：这是**唯一**肯让表格让出高度的地方。68px 下
+                               两行各约 34px（第一行功能卡 30px、第二行主/次按钮 32px
+                               + 1px 分隔线 = 63px，居中留 ~2.5px 余量），换来
+                               --row-h 32px 的行数从 27 掉到约 25 行 ——
+                               PRD §6.2「一屏 25–30 行」仍在区间内，**不许再往上加**。*/
+  --h-bar-top: 36px;        /* 顶部投放工具条（.wb-bar）**单独**的高度。
+                               批次 2 曾让它搭 --h-bar 一起涨到 56px，但它是单行工具条
+                               （30px 按钮 + 3px 余量已经够），56px 白吃 20px 表格高度。
+                               v3 把它拆出来，是为了把 PRD §6.2 的「一屏 25–30 行」还回去。*/
+
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 12px;
+  --radius: 18px;           /* 行程单统一圆角（report_html.py:458）*/
+
+  --content-max: 1600px;    /* 宽屏内容区最大宽度，居中 */
+
+  /* ── 态势区尺寸（v3 新增：概览条 / KPI 卡组 / 分析舱 / 遥测轨道）── */
+  --h-overview: 36px;
+  --h-rail: 26px;
+  --kpis-h: 72px;
+  --analysis-h: 164px;
+
+  /* ── 字阶（取自 report_html.py:125 / 154 / 167 / 153 / 261）── */
+  --fs-hero: 20px;          /* 顶栏页名 */
+  --fs-kpi: 30px;           /* KPI 大数字 · 字重 800 */
+  --fs-h2: 15px;
+  --fs-lab: 11px;           /* 小标签 */
+  --fs-cell: 12.5px;        /* 表格字号（工作台为 12.5，行高仍 32）*/
+
+  --font: "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei",
+          "Hiragino Sans GB", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "Cascadia Code", "JetBrains Mono", Consolas, ui-monospace, monospace;
+
+  --ease: cubic-bezier(.2, 0, 0, 1);
+
+  /* ── 动效曲线与时长（v3 新增，便于整体调速）─────────────── */
+  --e-reveal: .7s cubic-bezier(.2, .8, .25, 1);   /* 面板入场 */
+  --e-fast:   .24s ease;                          /* 悬停 / 描边 */
+  --e-emph:   .35s cubic-bezier(.2, .7, .3, 1);   /* 抬升 */
+  --t-sweep:  6.5s;         /* 概览条扫描光 */
+  --t-scan:   7.5s;         /* 背景扫描带 */
+  --t-edge:   4.6s;         /* 卡片边框流光 */
+  --t-radar:  4.2s;         /* 雷达扫描 */
+  --t-pulse:  1.1s;         /* 处理中呼吸点 */
+  --t-count:  1200ms;       /* 数字滚动（数字本身在 JS 里）*/
+
+  /* ── 票种色（**只用于小色点**，不做大块色带）───────────── */
+  --k-train: #38BDF8;       /* = 主色：火车票是主力票种 */
+  --k-hotel: #10B981;
+  --k-air:   #8B7BF0;
+  --k-taxi:  #22D3EE;
+  /* 客车票（v0.5 新增的第 8 个票种大类）：用户 2026-10-11 第 1 条 ——
+     客运 / 客车 / 大巴 / 长途汽车从原来的「打车票」里拆出来单列（打车票只剩
+     出租 / 网约车 / 滴滴 / 高德）。取青绿 --k-bus，落在 --k-taxi 的天青与
+     --k-hotel 的翠绿之间：三者同属冷色系但明度/色相都拉得开，小色点并排也分得清。 */
+  --k-bus:   #2DD4BF;
+  --k-other: #93A4C4;
+  /* 餐饮票（v0.4 批次 2 新增的第 7 个票种大类）：原为暖黄 #D29922，
+     v3 随「去金色」改为品红 —— 与其它 6 类都拉得开，且不带暖调。
+     只是小色点的颜色，不参与任何语义判定（判定看 wbCat 的关键词）。 */
+  --k-food:  #F472B6;
+  /* 非电子发票（行程单/报销单据）**不是一种票**，沿用「其他」的中性灰，
+     不另发明颜色 —— 别把它染成某个具体票种的颜色，会让人以为它是可报销发票。 */
+  --k-noninvoice: var(--k-other);
+}
+
+/* ── 深色（默认）────────────────────────────────────────── */
+:root,
+html[data-theme="dark"] {
+  /* 让原生控件（日期选择器、滚动条）跟随暗色，否则日历图标会是深底深图看不见 */
+  color-scheme: dark;
+
+  /* ── 背景四层：**蓝黑**，不是中性黑（行程单页的根本差别）
+        trainmap_html.py:71-74 / :81-82 ─────────────────────── */
+  --bg-from:      #060A14;   /* 应用底（最远）*/
+  --bg-to:        #0D1526;   /* 应用底（渐变另一端）*/
+  --panel:        #0F1A2E;   /* 面板 / 卡片底 */
+  --panel-border: #22314F;   /* 面板描边 */
+  --map-fill:     #12203A;   /* 凹槽：表头 / 图表底板 / 输入框 */
+  --map-border:   #2E4470;   /* 强调分隔线 */
+
+  /* 兼容旧名（app.css 大量使用），值指向新的四层 */
+  --bg:      var(--bg-from);
+  --bg-1:    var(--panel);
+  --bg-2:    var(--map-fill);         /* 悬浮 */
+  --bg-3:    #16294B;                 /* 选中 / 表头（比凹槽再亮一档）*/
+  --line:    #1B2A47;                 /* 1px 细分隔线 */
+  --line-2:  var(--map-border);       /* 强调分隔线 */
+  --inset-hi: rgba(255, 255, 255, .05);  /* 面板 / 卡片顶部 1px 内高光（金属边）*/
+  --btn-hi:   rgba(255, 255, 255, .16);  /* 实心强调按钮顶部高光 */
+
+  /* ── 文本三阶：带蓝调的冷白，不是纯白（trainmap_html.py:78-80）── */
+  --text:    #E9EFFA;
+  --text-2:  #93A4C4;
+  --text-3:  #5C6E8F;
+  --text-dim:   var(--text-2);     /* 行程单页的叫法，做别名 */
+  --text-faint: var(--text-3);
+
+  /* ── 主色三件套（trainmap_html.py:75-77）── 用户选定「天蓝」──── */
+  --accent:      #38BDF8;   /* 全站唯一主色 */
+  --accent-soft: #7DD3FC;   /* 渐变亮端 */
+  --accent2:     #22D3EE;   /* 霓虹青 —— 第二强调（图表线、光晕、扫描线）*/
+
+  /* 兼容旧名（app.css / index.html 的内联样式仍在用）*/
+  --acc:      var(--accent);
+  --acc-soft: var(--accent-soft);
+
+  /* ── 语义色（发光版：比原来那套更亮，配深蓝底才有自发光感）
+        report_html.py:189 / check_html.py:136 ────────────────── */
+  --ok:   #34D399;
+  --warn: #D98A2B;   /* 唯一的暖色保留：异常 / 待核对的语义警告色，不是装饰色 */
+  --err:  #F87171;
+  --info: #22D3EE;
+
+  /* ── 渐变 ──────────────────────────────────────────────── */
+  --grad-brand:  linear-gradient(96deg, var(--accent-soft) 0%, var(--accent) 42%, var(--accent2) 108%);
+  --grad-sheen:  linear-gradient(168deg, rgba(255, 255, 255, .075), rgba(255, 255, 255, .02));
+  --grad-panel:  linear-gradient(170deg, rgba(255, 255, 255, .06), rgba(255, 255, 255, .015));
+  --grad-card:   linear-gradient(158deg,
+                   color-mix(in srgb, var(--panel) 88%, transparent),
+                   color-mix(in srgb, var(--bg-from) 92%, transparent));
+  --grad-bar:    linear-gradient(90deg, var(--accent2), var(--accent));
+  --grad-flow:   linear-gradient(90deg, transparent, var(--accent-soft), var(--accent), var(--accent2), transparent);
+
+  /* ── 发光（「特效给的足足的」主要靠这一组）────────────────── */
+  --glow-acc:    0 0 12px rgba(56, 189, 248, .55);
+  --glow-soft:   0 0 10px var(--accent);
+  --glow-cyan:   0 0 12px rgba(34, 211, 238, .70);   /* trainmap_html.py:1307 图表线 */
+  --glow-strong: 0 0 26px rgba(56, 189, 248, .42), 0 0 60px rgba(34, 211, 238, .16);
+  --glow-text:   0 0 16px color-mix(in srgb, var(--accent) 45%, transparent);
+
+  /* ── 阴影：只给浮层与卡片；表格行一律不带 ────────────────── */
+  --shadow-card:  0 18px 42px -26px rgba(0, 0, 0, .92), inset 0 1px 0 rgba(255, 255, 255, .05);
+  --shadow-panel: 0 22px 54px -32px rgba(0, 0, 0, .95), inset 0 1px 0 rgba(255, 255, 255, .05);
+  --shadow-pop:   0 16px 40px -12px rgba(0, 0, 0, .8);
+
+  --scroll-thumb:       var(--panel-border);
+  --scroll-thumb-hover: var(--map-border);
+}
+
+/* ── 浅色（给财务同事看截图时一键切换）—— **不是反色** ─────────
+   照抄行程单页自己的「打印 / 存 PDF」策略（report_html.py:320-325）：
+   底色转**暖纸白**、主色由霓虹色降为深色（霓虹色在白底上读不清）。
+   同一组发光令牌**换实现而不换名字**（深色是真发光，浅色是实色微投影 +
+   浅晕圈），于是组件 CSS 一行都不用写两套。                        */
+html[data-theme="light"] {
+  color-scheme: light;
+
+  --bg-from:      #FAF7F2;
+  --bg-to:        #F3EEE4;
+  --panel:        #FFFFFF;
+  --panel-border: #E4DACA;
+  --map-fill:     #F6F1E8;
+  --map-border:   #D8CCB8;
+
+  --bg:      var(--bg-from);
+  --bg-1:    var(--panel);
+  --bg-2:    var(--map-fill);
+  --bg-3:    #EFE8DA;
+  --line:    #EDE5D8;
+  --line-2:  var(--map-border);
+  --inset-hi: rgba(255, 255, 255, .9);
+  --btn-hi:   rgba(255, 255, 255, .5);
+
+  --text:    #1F1B16;   /* 暖近黑，不是 #000 */
+  --text-2:  #5B5348;
+  --text-3:  #8A8175;
+  --text-dim:   var(--text-2);
+  --text-faint: var(--text-3);
+
+  --accent:      #0369A1;
+  --accent-soft: #075985;   /* 浅色下「亮端」反而更深，保证文字可读 */
+  --accent2:     #0E7490;
+
+  --acc:      var(--accent);
+  --acc-soft: var(--accent-soft);
+
+  --ok:   #047857;
+  --warn: #B54708;
+  --err:  #B42318;
+  --info: #0E7490;
+
+  --grad-brand:  linear-gradient(96deg, var(--accent-soft) 0%, var(--accent) 46%, var(--accent2) 108%);
+  --grad-sheen:  linear-gradient(168deg, rgba(3, 105, 161, .055), rgba(3, 105, 161, .015));
+  --grad-panel:  linear-gradient(170deg, rgba(255, 255, 255, .9), rgba(255, 255, 255, .55));
+  --grad-card:   linear-gradient(158deg, #FFFFFF, #FBF6EE);
+  --grad-bar:    linear-gradient(90deg, var(--accent2), var(--accent));
+  --grad-flow:   linear-gradient(90deg, transparent, var(--accent-soft), var(--accent), var(--accent2), transparent);
+
+  /* 同一个令牌名，换一种实现：glow 在白底上既看不见又会显脏 */
+  --glow-acc:    0 2px 6px rgba(3, 105, 161, .22);
+  --glow-soft:   0 0 0 3px rgba(3, 105, 161, .12);
+  --glow-cyan:   0 2px 6px rgba(14, 116, 144, .22);
+  --glow-strong: 0 6px 18px -8px rgba(3, 105, 161, .30);
+  --glow-text:   none;
+
+  --shadow-card:  0 10px 24px -14px rgba(31, 27, 22, .28), inset 0 1px 0 rgba(255, 255, 255, .9);
+  --shadow-panel: 0 14px 34px -20px rgba(31, 27, 22, .26), inset 0 1px 0 rgba(255, 255, 255, .9);
+  --shadow-pop:   0 16px 40px -14px rgba(31, 27, 22, .28);
+
+  --scroll-thumb:       var(--map-border);
+  --scroll-thumb-hover: #C4B49A;
+
+  /* 票种色在白底上要压深，否则霓虹色读不清 */
+  --k-train: #0369A1;
+  --k-hotel: #047857;
+  --k-air:   #5B4BC4;
+  --k-taxi:  #0E7490;
+  /* 客车票（深色 #2DD4BF 的浅色版）：白底上必须压深，否则霓虹青绿读不清。
+     与 --k-taxi(#0E7490) / --k-hotel(#047857) 同样保持可区分。 */
+  --k-bus:   #0F766E;
+  --k-other: #5B5348;
+  --k-food:  #9D174D;
+}
+
+/* ── 基础重置 ─────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body { margin: 0; padding: 0; height: 100%; }
+
+body {
+  /* 蓝黑对角渐变底（行程单页 report_html.py:92-100 的做法）*/
+  background: linear-gradient(160deg, var(--bg-from), var(--bg-to));
+  background-attachment: fixed;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;   /* 金额列对齐（report_html.py:88）*/
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;          /* 由内部滚动区接管，避免双滚动条 */
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); background-clip: content-box; }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: var(--r-xs);
+}
+
+::selection { background: color-mix(in srgb, var(--accent) 32%, transparent); }
+
+/* 全站尊重「减少动态效果」：装饰性动画一律停（新增动效也必须并入这里）*/
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
+}

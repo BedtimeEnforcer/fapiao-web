@@ -1,0 +1,242 @@
+/* ==========================================================================
+   fx.css — 外围特效层（v3「色彩绚烂 · 高科技风 · 特效给的足足的」）
+
+   为什么单独一个文件
+   ------------------
+   令牌层（theme.css）由主理人维护，组件层（app.css）里塞满了紧凑排版规则。
+   本文件只做一件事：**背景与外围的装饰性特效**，一行都不碰工作台表格本体
+   （表格保持密集可读：一屏 25–30 行、不发光、不放大）。
+
+   本文件加载顺序在 theme.css 与 app.css **之后**，所以能覆盖外壳容器的定位。
+
+   硬约束（源码里踩过的坑，别改回去）
+   ----------------------------------
+   1. **禁止 filter:blur() 做大面积光斑**。行程单页实测：blur 让地图漫游从
+      60fps 掉到 31.7fps。光晕一律用多点 radial-gradient 手绘衰减。
+   2. **禁止 transition: all**；所有动画只动 transform / opacity（可合成，
+      不触发 layout / paint）。
+   3. **背景层一律 pointer-events:none** —— 否则 .bg/#bgCanvas 铺满视口，
+      全站点击会被直接吃掉，界面等于不能用。
+   4. **颜色一律引用 theme.css 的令牌**（var(--accent) / var(--accent2) …），
+      本文件不出现任何写死的十六进制色值，也不写 rgba() 字面色。
+      于是「明暗切换」和「以后换主色」都不用改这里。
+   5. 浅色主题不是反色：光晕要**减弱到几乎不可见**，别在暖纸白底上糊一片蓝。
+
+   视觉权威：C:\Users\Public\Desktop\UI风格样板-v3-配色B-天蓝.html
+             （.bg::before / .orb / #bgCanvas / .scanband / @keyframes sweep /
+               float / scanY，以及 .overview::after 的扫描光）
+   ========================================================================== */
+
+/* ==========================================================================
+   ① 背景层统一规格
+   .bg（渐变光晕 + 扫描带）、.orb ×3（漫游光斑）、#bgCanvas（粒子星野）
+   全部 fixed 铺满视口、z-index:0、不吃事件。
+   ========================================================================== */
+.bg,
+.orb,
+#bgCanvas {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;          /* ← 缺了这行整个界面点不动，别删 */
+}
+
+/* 内容层一律抬到背景之上。
+   app.css 的 .shell 没有 position，不加这条的话 .bg / #bgCanvas 这类
+   z-index:0 的定位元素会盖在 .shell 的**文字与行内内容**之上。
+   只抬 .shell 这一个根容器（不是像样板那样分别抬 .sidenav / .main）：
+   .sidenav 在 app.css 里已经是 z-index:5，若在这里把它一起覆写成 1，
+   会掉到 .main 之下，把「悬浮展开的导航 tooltip（.nav-item::after）」压掉。 */
+.shell {
+  position: relative;
+  z-index: 1;
+}
+
+/* ==========================================================================
+   ② 渐变光晕底（.bg::before）
+   三点 radial-gradient：左上主色 / 右上霓虹青 / 底部大范围主色。
+   样板的 .bg::before 还叠了一层 linear-gradient(--bg-from → --bg-to) 打底，
+   这里**故意去掉**：theme.css 的 body 已经有同一份对角渐变，重写一遍只会
+   在浅色主题下多一条需要同步维护的规则（见文件末「未照搬」注释）。
+   ========================================================================== */
+.bg { overflow: hidden; }        /* 裁掉扫描带的左右溢出，不产生横向滚动 */
+
+.bg::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(1600px 1100px at 50% 42%,
+      color-mix(in srgb, var(--accent) 9%, transparent), transparent 72%),
+    radial-gradient(1080px 720px at 10% -8%,
+      color-mix(in srgb, var(--accent) 28%, transparent), transparent 62%),
+    radial-gradient(980px 660px at 94% 2%,
+      color-mix(in srgb, var(--accent2) 22%, transparent), transparent 60%),
+    radial-gradient(1400px 900px at 50% 124%,
+      color-mix(in srgb, var(--accent) 18%, transparent), transparent 66%);
+}
+
+html[data-theme="light"] .bg::before {
+  background:
+    radial-gradient(1600px 1100px at 50% 42%,
+      color-mix(in srgb, var(--accent) 4%, transparent), transparent 72%),
+    radial-gradient(1080px 720px at 10% -8%,
+      color-mix(in srgb, var(--accent) 9%, transparent), transparent 62%),
+    radial-gradient(980px 660px at 94% 2%,
+      color-mix(in srgb, var(--accent2) 8%, transparent), transparent 60%),
+    radial-gradient(1400px 900px at 50% 124%,
+      color-mix(in srgb, var(--accent) 6%, transparent), transparent 66%);
+}
+
+/* ==========================================================================
+   ③ 背景扫描带（.bg::after）
+   一道斜向霓虹光束自上而下反复掠过整页，只动 transform。
+   样板里这是一个独立 <div class="scanband">；这里改用 .bg 的伪元素，
+   于是索引页 body 只需要新增 .bg / .orb ×3 / #bgCanvas 五个元素。
+   ========================================================================== */
+.bg::after {
+  content: "";
+  position: absolute;
+  left: -30%;
+  right: -30%;
+  top: 0;
+  height: 170px;
+  background: linear-gradient(180deg,
+    transparent,
+    color-mix(in srgb, var(--accent2) 15%, transparent) 48%,
+    color-mix(in srgb, var(--accent) 12%, transparent) 62%,
+    transparent);
+  transform: translateY(-240px);
+  opacity: 1;
+  will-change: transform;
+  animation: scanY var(--t-scan) linear infinite;
+}
+
+html[data-theme="light"] .bg::after { opacity: .4; }
+
+@keyframes scanY {
+  0%   { transform: translateY(-240px); }
+  100% { transform: translateY(120vh); }
+}
+
+/* ==========================================================================
+   ④ 三颗漫游光斑（.orb.o1 / o2 / o3）
+   样板里 .orb 是有尺寸的球（820/700/600px）靠 top/left 负偏移挂在角落。
+   这里按任务给定的规格，三个背景层统一 inset:0 铺满视口，改由
+   radial-gradient 的 at <位置> 决定光斑落在哪一角 —— 视觉等价，但不会有
+   超出视口的大盒子，动画只动 transform / opacity。
+   ========================================================================== */
+.orb {
+  animation: float 17s ease-in-out infinite;
+  will-change: transform;
+}
+
+.orb.o1 {
+  animation-delay: -2s;
+  background: radial-gradient(760px 760px at 12% 6%,
+    color-mix(in srgb, var(--accent) 42%, transparent),
+    color-mix(in srgb, var(--accent) 24%, transparent) 38%,
+    transparent 72%);
+}
+
+.orb.o2 {
+  animation-delay: -7s;
+  background: radial-gradient(660px 660px at 92% 18%,
+    color-mix(in srgb, var(--accent2) 36%, transparent),
+    color-mix(in srgb, var(--accent2) 20%, transparent) 38%,
+    transparent 72%);
+}
+
+.orb.o3 {
+  animation-delay: -11s;
+  background: radial-gradient(580px 580px at 46% 104%,
+    color-mix(in srgb, var(--accent) 34%, transparent),
+    color-mix(in srgb, var(--accent) 18%, transparent) 38%,
+    transparent 72%);
+}
+
+/* 浅色：光斑整体压到接近不可见（深蓝主色在暖纸白上稍一浓就是一块脏蓝） */
+html[data-theme="light"] .orb { opacity: .34; }
+
+@keyframes float {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50%      { transform: translate3d(26px, -32px, 0) scale(1.07); }
+}
+
+/* ==========================================================================
+   ⑤ 粒子星野画布（#bgCanvas）
+   只负责尺寸与位置；backing store 与绘制逻辑在 js/fx.js。
+   ⚠️ width/height:100% 必须写：canvas 是 replaced element，只给 inset:0
+      它会拿 canvas.width（= 视口 × devicePixelRatio）当显示尺寸，右边和下边
+      会溢出一倍。
+   ========================================================================== */
+#bgCanvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  opacity: 1;
+}
+
+html[data-theme="light"] #bgCanvas { opacity: .5; }
+
+/* ==========================================================================
+   ⑥ 概览条 / 工具条的扫描光（#wbBar::after）
+   #wbBar 就是工作台顶部的态势条（.wb-bar）。app.js 只对它做
+   `hidden` 切换与 `classList.add('dragging')`，从不用 innerHTML 整体重绘，
+   所以挂伪元素是安全的（伪元素本来也不受 innerHTML 影响）。
+
+   为什么不用 ::before：样板 .overview::before 是另一套点阵底纹，
+   #wbBar 里已经排了「提示文字 + 三个按钮」，再叠一层点阵只会更花。
+
+   ⚠️ #wbBar 是 display:flex。伪元素在 flex 容器里会变成一个 flex item，
+      所以这里必须 position:absolute 把它拉出文档流。
+   ========================================================================== */
+#wbBar {
+  position: relative;
+  overflow: hidden;              /* 裁掉扫过的光带；条内无下拉/浮层，裁不掉东西 */
+}
+
+#wbBar::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 26%;
+  pointer-events: none;
+  background: linear-gradient(90deg,
+    transparent,
+    color-mix(in srgb, var(--accent2) 13%, transparent),
+    transparent);
+  animation: sweep var(--t-sweep) linear infinite;
+}
+
+html[data-theme="light"] #wbBar::after {
+  background: linear-gradient(90deg,
+    transparent,
+    color-mix(in srgb, var(--accent2) 8%, transparent),
+    transparent);
+}
+
+/* 光带 26% 宽：-120% → 520% 即从左侧屏外扫到右侧屏外 */
+@keyframes sweep {
+  0%   { transform: translateX(-120%); }
+  100% { transform: translateX(520%); }
+}
+
+/* ==========================================================================
+   ⑦ 尊重「减少动态效果」
+   theme.css 的兜底是把 animation-duration 压到 .001ms —— 那**仍在每帧跑**。
+   样板的做法是 animation:none!important 硬关，这里照办（只覆盖本文件的元素，
+   不去动 app.css 的 spinner / 呼吸点等语义动效）。
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  .orb,
+  .bg::after,
+  #wbBar::after {
+    animation: none !important;
+  }
+  .orb { opacity: .14; }
+  .bg::after { transform: translateY(-240px); }
+  #bgCanvas { display: none !important; }   /* 星野在 JS 侧也不会启动，见 fx.js */
+}

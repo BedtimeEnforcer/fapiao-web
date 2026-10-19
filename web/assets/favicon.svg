@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="512" height="512" role="img" aria-label="报销助手：票据与核对勾">
+  <defs>
+    <linearGradient id="background" x2="1" y2="1">
+      <stop stop-color="#123B53"/><stop offset="1" stop-color="#0C172D"/>
+    </linearGradient>
+    <linearGradient id="paper" x2=".3" y2="1">
+      <stop stop-color="#FFFFFF"/><stop offset="1" stop-color="#D5F1F4"/>
+    </linearGradient>
+    <linearGradient id="seal" x2="1" y2="1">
+      <stop stop-color="#3EE6C1"/><stop offset="1" stop-color="#15B8BD"/>
+    </linearGradient>
+  </defs>
+  <rect x="1" y="1" width="62" height="62" rx="15" fill="url(#background)"/>
+  <rect x="1.5" y="1.5" width="61" height="61" rx="14.5" fill="none" stroke="#74E5EE" stroke-opacity=".25"/>
+  <path d="M16 11h24l8 8v30l-4-3-4 3-4-3-4 3-4-3-4 3-4-3-4 3z" fill="url(#paper)"/>
+  <path d="M40 11v8h8" fill="#9EDCE6"/>
+  <g stroke="#28687E" stroke-width="3" stroke-linecap="round">
+    <path d="M23 23h12M23 30h16M23 37h8"/>
+  </g>
+  <circle cx="46" cy="46" r="13" fill="#0D2238"/>
+  <circle cx="46" cy="46" r="10.5" fill="url(#seal)"/>
+  <path d="m40.5 46 3.7 3.7 7.4-8" fill="none" stroke="#0C3A48" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
