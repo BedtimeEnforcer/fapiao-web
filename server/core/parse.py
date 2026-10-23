@@ -1,11 +1,10 @@
 # -*- coding: utf-8 -*-
 """core/parse.py — 发票文本提取与字段解析（PDF + OFD）。
 
-依赖：pdfplumber。所有第三方依赖（reportlab/PIL/pypdf）由调用方模块引入，
-本模块只负责「文本提取 + 字段解析」这一纯逻辑层，便于单测与 CLI 复用。
+提文本只用 pdfplumber，其余第三方库（reportlab/PIL/pypdf）由调用方引入；
+本模块只做纯逻辑，方便单测和 CLI 复用。
 
-性能：extract_pdf_texts 带 (路径, mtime) 内存缓存，避免同一文件被多模块重复读取。
-      所有正则均预编译到模块级常量。
+extract_pdf_texts 带 (路径, mtime) 内存缓存，正则都预编译到模块级常量。
 """
 import os
 import re
@@ -18,7 +17,7 @@ import pdfplumber
 
 from .config import _log_runtime
 
-# ── 预编译正则（模块级，避免重复编译） ─────────────────────────────
+# 预编译正则（模块级，避免重复编译）
 # 发票号码：普通/电子发票常为 8 位，专票/电子发票号可达 20 位；“发票号”亦可
 _RE_INVOICE_NO = re.compile(r'发票号码?\s*[:：]?\s*([0-9A-Za-z]{8,20})')
 # 宽松：允许「发票号码：」与号码之间夹印章/换行等噪声（如成品油发票被“成品油 全 章”隔断）
@@ -143,9 +142,7 @@ def find_star_item(text):
             return yyy, yyy
     return None
 
-# ══════════════════════════════════════════════════════════════════
 #  网约车行程单（高德 / 滴滴）
-# ══════════════════════════════════════════════════════════════════
 # 行程单**不是发票**：它是打车平台开的「报销凭证」，没有发票号码、没有税收分类、
 # 没有购销方。以前它被当成增值税发票走主流程，导致三处错误：
 #   ① 标签退化成销售方兜底 → 抽到 POI / 酒店名（「云端智能酒店」「号服务商车型上车」）
@@ -199,7 +196,7 @@ def is_trip_sheet(text):
     return ('上车时间' in text and '起点' in text and '终点' in text)
 
 
-# ── 非电子发票（行程单 / 报销单据 / 报销辅助材料）──────────────────
+# 非电子发票（行程单 / 报销单据 / 报销辅助材料）
 # 用户口径（2026-10-10）：这类文件「不是发票」，导入时就分到**非电子发票**，
 # 不进金额合计、不进地图轨迹、不当发票用。
 #
@@ -646,7 +643,7 @@ def _unique_path(filepath):
     return f"{base}({n}){ext}"
 
 
-# ── 老式增值税电子普通发票的「监制章带」兜底（2026-10-11 用户第②条）────────────
+# 老式增值税电子普通发票的「监制章带」兜底
 # 2020–2024 年的老式增值税电子普通发票（京东购物票、中石化加油票…）把
 # 发票代码 / 发票号码 / 开票日期 印在票面下方**监制章带**里，而
 # 「发票代码:」「发票号码:」「开票日期: 年 月 日」三个标签后面**全是空的**
@@ -788,7 +785,7 @@ def _extract_parties(text, *, conservative=False):
                 buyer = passenger          # buyer 被误设为航司名 → 纠正为乘客
             elif not buyer and passenger:
                 buyer = passenger
-    # ── 税号归属（2026-10-11 用户第③条）────────────────────────────────
+    # 税号归属
     # 红线：**购买方税号绝不许被填成销售方税号**。
     # 票面只印一个税号、或同一税号重复出现时，那个税号是**销售方**的
     # （销售方税号是票面主体，购买方栏常常整个留空，尤其个人抬头票）。
@@ -1110,7 +1107,7 @@ def _ofd_weak_fallback(filepath, ofd_err):
         _log_no_pdf = 'OFD 抽取薄弱，且同目录未找到同名 PDF'
         _no_pdf_msg = '；且同目录未找到同名 PDF，无法改道'
 
-    # ── 第二级退路：同主干名的 `.xml`（数电票 XML 原件）── 2026-10-12 新增。
+    # 第二级退路：同主干名的 `.xml`（数电票 XML 原件）
     #    纯向下追加：只有 PDF 那一级没救回来才走到这里，有同名 PDF 时行为一字不变。
     xsib = _sibling_xml_path(filepath)
     if xsib:
@@ -1423,7 +1420,7 @@ def extract_invoice_fields(text, *, source=''):
     nt = _normalize_cjk(text)
     flat = _flatten(text)
 
-    # ── 1. 发票号码 / 开票日期 / 类型 ──
+    # 1. 发票号码 / 开票日期 / 类型
     info['invoice_no'] = extract_invoice_no(nt)
     info['invoice_date'] = extract_invoice_date(nt)
     if '铁路电子客票' in nt or '火车票' in nt:
@@ -1435,7 +1432,7 @@ def extract_invoice_fields(text, *, source=''):
     else:
         info['invoice_type'] = '发票'
 
-    # ── 2. 购销方（多层策略） ──
+    # 2. 购销方（多层策略）
     buyer, seller, buyer_tax, seller_tax = _extract_parties(
         nt, conservative=source == 'ofd' and not text.startswith(
             (_OFD_PDF_FALLBACK_MARK, _OFD_XML_FALLBACK_MARK)))
@@ -1447,7 +1444,7 @@ def extract_invoice_fields(text, *, source=''):
     if not info.get('seller_tax_id'):
         info['seller_tax_id'] = seller_tax
 
-    # ── 4. 金额 / 税额 / 价税合计 ──
+    # 4. 金额 / 税额 / 价税合计
     m = _RE_TOTAL_LINE.search(flat)
     if not m:
         m = _RE_TOTAL_LINE2.search(flat)
@@ -1492,12 +1489,12 @@ def extract_invoice_fields(text, *, source=''):
     if info['tax_amount'] <= 0 and tax_excl > 0 and total > tax_excl:
         info['tax_amount'] = round(total - tax_excl, 2)
 
-    # ── 5. 税率 ──
+    # 5. 税率
     rm = _RE_TAX_RATE.search(flat)
     if rm:
         info['tax_rate'] = f"{rm.group(1)}%"
 
-    # ── 6. 项目名称（*分类*明细） ──
+    # 6. 项目名称（*分类*明细）
     # 用 find_star_item 而非 _RE_ITEM.search：跳过密码区防伪码里的假星号（见函数注释）。
     _pair = find_star_item(nt)
     if _pair:
@@ -1514,7 +1511,7 @@ def extract_invoice_fields(text, *, source=''):
     if len(_stripped) >= 2:
         info['item_name'] = _stripped
 
-    # ── 7. 备注（限定区间，修复 D1 过度捕获） ──
+    # 7. 备注（限定区间，修复 D1 过度捕获）
     # 取 findall 里**第一个非空**的，而不是 re.search 的第一个：
     # 机票类发票的 PDF 里常有两处「备注」块（发票重复排版），第一处是空壳、
     # 第二处才写着行程（实测 findall = ['', '2024-12-02 08:10 乌鲁木齐-天津 GS7577 …']）。
@@ -1536,7 +1533,7 @@ def extract_invoice_fields(text, *, source=''):
         info['remarks'] = _rm
         break
 
-    # ── 8. 结构化字段：开票人 / 复核人 / 收款人 / 销售方地址 ──
+    # 8. 结构化字段：开票人 / 复核人 / 收款人 / 销售方地址
     m = _RE_DRAWER.search(nt)
     if m:
         info['drawer'] = _clean_person(m.group(1))
@@ -1578,7 +1575,7 @@ def ofd_display_fields(filepath: str, meta: dict | None = None) -> dict:
     return result
 
 
-# ── 共享工具：列目录 + MD5 去重（消除 train/hotel 重复逻辑，Task 14/15） ──
+# 共享工具：列目录 + MD5 去重
 # .xml 是数电发票的**结构化原件**（含 IssuItemInformation/ItemName 等完整字段），
 # 比 PDF 文字层可靠：明细名不会被换行截成「客运服」「代订车服」。
 # 由 extract_xml_text 把它转成伪票面文本后复用既有正则。

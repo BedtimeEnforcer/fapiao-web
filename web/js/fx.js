@@ -1,22 +1,8 @@
-/* ==========================================================================
-   fx.js — 外围特效脚本（只做一件事：#bgCanvas 的粒子星野）
-
-   职责边界
-   --------
-   背景渐变光晕、漫游光斑、扫描带、工具条扫描光全在 css/fx.css 里用 CSS 完成。
-   本文件**只**画 canvas 上缓慢漂浮的细光点，零依赖、零构建（原生 <script>）。
-
-   硬约束
-   ------
-   1. 原生 JS，不引任何库；项目没有打包器。
-   2. 用 requestAnimationFrame；标签页隐藏（visibilitychange）即停帧；
-      窗口 resize 重新适配，并考虑 devicePixelRatio。
-   3. **必须尊重 prefers-reduced-motion: reduce** —— 命中时一个点都不画、不启动，
-      留静态渐变底（fx.css 的 .bg::before）即可。
-   4. 颜色不许硬编码：一律从 CSS 令牌读（明暗切换 / 换主色都不用改这里）。
-   5. canvas 的尺寸与定位由 fx.css 控制，本文件不写任何 px 样式，
-      只写 canvas.width/height 这两个**属性**（backing store）。
-   ========================================================================== */
+/* fx.js — 背景特效：只画 #bgCanvas 上缓慢漂浮的细光点。
+   背景渐变、光晕、扫描带等都在 css/fx.css 里用 CSS 做。
+   不引任何库；用 requestAnimationFrame，标签页隐藏即停帧，resize 时重新适配；
+   命中 prefers-reduced-motion 时一个点都不画；颜色一律从 CSS 令牌读，不硬编码；
+   canvas 尺寸和定位由 fx.css 管，这里只写 canvas.width/height 属性。 */
 (function () {
   'use strict';
 
@@ -27,7 +13,7 @@
 
   var root = document.documentElement;
 
-  /* ── 参数 ─────────────────────────────────────────────── */
+  /* 参数 */
   var COUNT    = 96;       /* 只画 96 个点：够看出星野，不烧帧 */
   var FRAME_MS = 40;       /* ~25fps。星野是慢速漂浮，不需要 60fps */
   var BASE_A   = 0.18;     /* 单点最低透明度 */
@@ -46,7 +32,7 @@
     return seed / 0x7fffffff;
   }
 
-  /* ── 颜色：从 CSS 令牌读，绝不硬编码 ──────────────────── */
+  /* 颜色：从 CSS 令牌读，绝不硬编码 */
   function readCols() {
     var cs = getComputedStyle(root);
     var out = [];
@@ -58,7 +44,7 @@
     if (out.length) cols = out;   /* 读不到就沿用上一次的，别用空串去画 */
   }
 
-  /* ── 适配视口 ─────────────────────────────────────────── */
+  /* 适配视口 */
   function build() {
     dpr = Math.min(2, window.devicePixelRatio || 1);
     W = window.innerWidth;
@@ -79,7 +65,7 @@
     }
   }
 
-  /* ── 逐帧绘制 ─────────────────────────────────────────── */
+  /* 逐帧绘制 */
   function frame(ts) {
     raf = window.requestAnimationFrame(frame);
     if (ts - last < FRAME_MS) return;    /* 降帧：超出的帧直接跳过，不排队 */
@@ -106,7 +92,7 @@
     ctx.globalAlpha = 1;
   }
 
-  /* ── 启停 ─────────────────────────────────────────────── */
+  /* 启停 */
   var mq = window.matchMedia
     ? window.matchMedia('(prefers-reduced-motion: reduce)')
     : null;
@@ -135,7 +121,7 @@
     start();
   }
 
-  /* ── 事件 ─────────────────────────────────────────────── */
+  /* 事件 */
   window.addEventListener('resize', function () {
     stop();
     build();
@@ -157,7 +143,7 @@
     });
   }
 
-  /* ── 启动 ─────────────────────────────────────────────── */
+  /* 启动 */
   readCols();
   build();
   sync();     /* 命中 reduced-motion 时 sync() 不会 start()，一个点都不画 */

@@ -1,12 +1,11 @@
 # -*- coding: utf-8 -*-
 """routes/_shared.py — 各模块路由共用的小工具。
 
-职责边界（与 `merge.py` 完全一致）：
-  * 本层只做「路径规整 / 目录展开 / 弹系统对话框 / 默认输出目录」；
-  * 任何解析、合并、生成逻辑一律调用 `core/`，此处不复现任何算法。
+只做路径规整、目录展开、弹系统对话框、默认输出目录这些事；
+解析、合并、生成都调 core/，这里不写算法。
 
-之所以独立成模块，是让 `train` / `hotel` / `check` / `rename` 四个路由共用，
-避免同一段路径处理代码被复制四份（改一处要改四处，必然会漏）。
+独立成模块，是让 train / hotel / check / rename 四个路由共用一份路径处理，
+免得同一段代码复制四份。
 """
 from __future__ import annotations
 
@@ -16,7 +15,7 @@ import shutil
 import sys
 import tempfile
 
-# ── 让 `core` 可被导入（与 merge.py 同一套规则，兼容 PyInstaller 解包目录）──
+# 让 `core` 可被导入（与 merge.py 同一套规则，兼容 PyInstaller 解包目录）
 if getattr(sys, "frozen", False):
     _SERVER = getattr(sys, "_MEIPASS", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 else:
@@ -123,7 +122,7 @@ def resolve_inputs(raw) -> list:
     return norm_paths(flat)
 
 
-# ── 真实桌面（Windows 已知文件夹）────────────────────────────────────────
+# 真实桌面（Windows 已知文件夹）
 # 背景（用户 2026-10-11 第⑩条）：`expanduser("~")/Desktop` 在**桌面被 OneDrive
 # 重定向**的机器上会指向一个还在、但用户早就不用的旧目录（真桌面已经搬去
 # `...\OneDrive\桌面`）。所以先问系统「桌面到底在哪」，问不到才退回拼路径。

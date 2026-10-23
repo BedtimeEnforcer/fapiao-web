@@ -1,17 +1,12 @@
 // workbench 视图；依赖先加载的 app.js 中的通用状态和界面工具。
-/* ══════════════════════════════════════════════════════════════
-   发票工作台（v0.4 · R1 统一发票列表 + R2 统一解析入口）
-   ──────────────────────────────────────────────────────────────
-   与旧模块的差别：旧模块「一个模块一张表、各自 scan 一遍」，工作台是
-   **一张跨票种主列表**，数据只来自 /api/pool/scan 的一次解析。
-   批次 2 起底栏是**流水线栏**：一次 `POST /api/pool/run` 按刚性顺序跑完
-   「查重 → 核对 → 重命名 → 合并」，「生成行程单」是旁边的第二条独立路径。
-   ══════════════════════════════════════════════════════════════ */
+/* 发票工作台：一张跨票种主列表，数据只来自 /api/pool/scan 的一次解析。
+   底栏是流水线：一次 POST /api/pool/run 按顺序跑完「查重 → 核对 → 重命名 → 合并」，
+   「生成行程单」是旁边另一条独立路径。 */
 
 const wb = {
   rows: [],          // 当前扫描快照的全部行；行 id 始终与服务端快照一致
   sourcePaths: new Set(), // 历次导入的原始输入，含被归并的副本和附属材料
-  /* ── 选中语义（用户 2026-10-11 第 6 条）──
+  /* 选中语义
      「已选」不再是「用户点过的那些」，而是 **当前筛选结果减去用户手动取消的行**：
      可见即已选。所以这里存的是**反选集**（unsel）—— 空集 = 当前筛选结果全选，
      而不是「一张都没选」。
@@ -37,7 +32,7 @@ const wb = {
   sortKey: 'date',
   sortDir: -1,       // 默认日期倒序：新票在最上面
   activeId: null,    // 详情侧栏当前展示的行
-  /* ── 「处理」列逐行状态（批次 2）──
+  /* 「处理」列逐行状态
      **按 path 存，不按 id 存**：`routes/pool.py::_dedup_copies` 会把同票副本整行移出，
      行 id 是数组下标、去重后会整体重排；path 才是全项目通用的身份（去重、预览、执行都用它）。
      proc 是**唯一真源**：`wbProcHtml` 从它读，不从行对象的 `.proc` 读 ——
@@ -109,7 +104,7 @@ function wbCat(r) {
   if (r.kind === 'train') return 'train';
   if (r.kind === 'air') return 'air';
   if (r.kind === 'hotel') return 'hotel';
-  /* ── 2026-10-12（用户第 ⑩ 条第三款）：打车票 + 客车票 **合并成「客运服务」一类**。
+  /* 打车票 + 客车票合并成「客运服务」一类。
      用户原话（转述）：上方的票据标签把打车票和客车票都直接归为「客运服务」，
      这样交通费里面就只有火车票 / 机票 / 客运服务三项。
      后端冻结契约：这两类行的 `type` 都会写成「客运服务」，`kind` 仍分别是 taxi / bus。
@@ -328,7 +323,7 @@ function wbRenderKpis(rows) {
     + `<span class="kpi-value">${esc(String(it.value))}</span></div>`).join('');
 }
 
-/* ── 解析状态（用户 2026-10-12 第 ⑨ 条）───────────────────────────────────
+/* 解析状态
    这一列以前叫「核对」、显示的是**抬头比对**的结论（通过 / 不符 / 待确认）。
    用户原话的意思是：那不对，这一列应该叫「解析状态」，只有完成 / 待补全 / 失败三档。
    真源是后端行字段 `parse_status`（'done' | 'todo' | 'failed'）。
@@ -490,16 +485,15 @@ function wbRenderBar() {
   else if (!el.wbTripMenu.hidden) wbRenderTripMenu();
 }
 
-/* ══════════════════════════════════════════════════════════════
+/*
    底栏流水线执行（v0.4 批次 2）
-   ──────────────────────────────────────────────────────────────
    一次 `POST /api/pool/run` 跑完，顺序由**后端**刚性决定：
      查重 → 核对 → 重命名 → 合并
    前端只负责：① 请求前把选中行置 running；② 请求中在底栏按阶段滚提示；
    ③ 请求后把 stages/rows/skipped 翻译成逐行状态 + 汇总框。
    ⚠️ 后端**没有流式接口**（只有 /api/pool/run/status 轮询，本批不用），
    所以「正在核对…」这类文案只是**按阶段顺序的乐观提示**，不代表服务端真的走到那一步。
-   ══════════════════════════════════════════════════════════════ */
+ */
 
 /** 底栏右侧的说明文字：执行中就显示阶段文案，空闲就说明将要跑哪几步。 */
 function wbRenderRunNote() {
@@ -705,7 +699,7 @@ async function wbRunPipeline() {
     });
 
     if (!data.ok) {
-      /* ── 优雅降级 ──
+      /* 优雅降级
          /api/pool/run 与 /api/pool/scan 是同批两位工程师并行开发的：
          它可能还没上线（404 / 405 / 后端异常）。这里**必须**退回可读提示，
          绝不能把整页抛崩，也不能把行永远留在「处理中」。 */
@@ -717,7 +711,7 @@ async function wbRunPipeline() {
       return;
     }
 
-    /* ── 逐行状态回写 ──
+    /* 逐行状态回写
        先按 path 把本次涉及的行全部对出来并**默认置 fail**，再用后端数据覆盖：
        契约说 `rows` 会回写「全部选中行（含被跳过的）」，万一某行没回来，
        默认 fail 是更安全的读法 —— 成功得由后端明确说，不能由缺失默认成功。 */
@@ -900,7 +894,7 @@ function wbShowRunSummary(data, outDir, selectedCount, actions) {
   toast(`${resultTitle}已生成`, 'ok');
 }
 
-/* ── 第二条独立路径：生成行程单 ────────────────────────────────
+/* 第二条独立路径：生成行程单
    「工作台全部」忽略筛选与勾选；「当前勾选」沿用 wbSelRows 的可见勾选语义。
    两种范围都只包含交通与住宿票，不改变工作台已有筛选。
    v0.5：交通票与住宿票**不再分两个接口、开两个标签页** —— 统一走一个合并接口
@@ -1024,7 +1018,7 @@ function wbRender() {
   wbRenderRunNote();
 }
 
-/* ── ⑦ 解析进度：真进度条 + 轮询（用户 2026-10-11 上午第 ⑦ 条）──────────
+/* 解析进度：真进度条 + 轮询
    改前：导入 100 张只有一个转圈，用户不知道到第几张了。
    改后：请求体里先埋一个 `job_id`（`scan_<时间戳>_<随机>`），**并发地**每 400ms 问一次
    `GET /api/pool/scan/status?job_id=…`，把 index/total/current 画到底栏进度条上；
@@ -1131,7 +1125,7 @@ function wbProgStart(jobId, fileCount) {
   };
 }
 
-/* ── 加载：一次解析抽全字段（R2）─────────────────────────────
+/* 加载：一次解析抽全字段
    核对预设沿用「发票核对」模块里用户填的那份（同一份 localStorage），
    这样工作台的列和核对模块的结论口径一致。 */
 let wbScanQueue = Promise.resolve();
@@ -1228,7 +1222,7 @@ async function wbUpload(fileList) {
   }
 }
 
-/* ── 选中态 / 激活态的「就地刷新」───────────────────────────
+/* 选中态 / 激活态的「就地刷新」
    这两个状态原本是靠 wbRender() 整表重建来体现的。整表重建会替换 #wbBody.innerHTML，
    **把用户手里正在点的复选框节点直接销毁**：实测连点 5 个勾选框只有第 1 个生效
    （后 4 个节点已经脱离文档，click 打空）。同时还会把滚动位置弹回顶部。
@@ -1254,7 +1248,7 @@ function wbRefreshActive() {
   });
 }
 
-/* ── 右侧详情侧栏 ───────────────────────────────────────────
+/* 右侧详情侧栏
    点任意行 → 显示票面预览 + 解析明细 + 核对结论。 */
 const DETAIL_FIELDS = [
   ['type', '票种'], ['label', '标签'], ['item_name', '票面明细'], ['amount', '金额'], ['date', '开票日期'],
@@ -1275,7 +1269,7 @@ const DETAIL_HOTEL = [
   ['hotel_name', '酒店'], ['checkin', '入住'], ['checkout', '退房'],
 ];
 
-/* ── 机票行程手动补全（用户口径：解析不到就给用户一个入口，不填也没关系）───────
+/* 机票行程手动补全（用户口径：解析不到就给用户一个入口，不填也没关系）
    持久化用 localStorage，key 用 **现成的 r.path** —— 全项目的去重、预览、执行
    一律以 path 为身份（wbLoad/gstate 都是 `new Set(rows.map(r => r.path))`）。
    不另发明指纹规则：自己造的指纹最容易跟后端对不上。
@@ -1458,7 +1452,7 @@ function renderDetail(r) {
   }
   el.detailTitle.textContent = r.filename;
 
-  /* ── 票面预览（用户第 ⑥ 条）────────────────────────────────────────────
+  /* 票面预览（用户第 ⑥ 条）
      改前：PDF 内嵌 `<iframe>`、OFD 只给一句「无法在页面内渲染」+ 新标签链接；
      `.detail-preview` 是固定 240px 高 —— 侧栏只有 260px 宽，PDF 竖版放进来，
      下方那一大块全是留白。
@@ -1490,7 +1484,7 @@ function renderDetail(r) {
       + `<a href="${esc(url)}" target="_blank" rel="noreferrer">点这里在新标签页打开</a>`
       + `（需要系统已装 OFD 阅读器）。</p>`);
 
-  // ── 解析明细：按票种给不同字段集，空字段一律不显示 ──
+  // 解析明细：按票种给不同字段集，空字段一律不显示
   const d = r.detail || {};
   const base = DETAIL_FIELDS.map(([k, label]) => {
     let v = d[k] != null ? d[k] : r[k];
@@ -1501,7 +1495,7 @@ function renderDetail(r) {
     : d.kind === 'hotel' ? DETAIL_HOTEL : [];
   const extraRows = extra.map(([k, label]) => [label, d[k]]);
 
-  // ── 核对结论 ──
+  // 核对结论
   const st = (r.check || {}).status || 'unknown';
   const checkBlock = `<div class="detail-sec"><h4>核对结论</h4>`
     + `<div><span class="st ${esc(st)}">${esc(CHECK_NAME[st] || '—')}</span></div>`
@@ -1556,7 +1550,7 @@ function wbApplySavedJourney(r, saved) {
   }
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
+/*
    v0.7 新增的两个浮层（用户 2026-10-11）
      · ⑥ 票面放大 lightbox
      · ⑧② 自建日期日历（原生 `<input type="date">` 的弹出面板改不了样式）
@@ -1565,9 +1559,9 @@ function wbApplySavedJourney(r, saved) {
    `.pv-open`、`.dt-pop` `.dt-head` `.dt-nav` `.dt-nav-btn` `.dt-title` `.dt-grid`
    `.dt-dow` `.dt-day`(+`.on`/`.today`/`.off`) `.dt-foot` `.dt-quick` `.dt-ok`
    `.dt-clear`），改名之前先把任务书翻出来看一遍。
-   ══════════════════════════════════════════════════════════════════════════ */
+ */
 
-/* ── ⑥ 票面预览：降级 + 点击放大 ─────────────────────────────────────── */
+/* ⑥ 票面预览：降级 + 点击放大 */
 
 /** 预览图没加载出来时**静默回退到改前的样子**。
     后端的 `/api/pool/thumb` 此时很可能还没上线（契约说失败是 404 + JSON），
@@ -1638,7 +1632,7 @@ function pvClose() {
   if (im) im.setAttribute('src', '');     // 别再占着解码后的位图
 }
 
-/* ── ⑧② 自建日期日历浮层 ───────────────────────────────────────────────
+/* ⑧② 自建日期日历浮层
    为什么自建：原生 `<input type="date">` 的弹出面板由浏览器自己画，CSS 够不着
    （用户原话「弹出框 UI 风格不符」）。
    四个日期输入框（工作台的 起/止 + 发票库的 起/止）都已经是
@@ -1703,7 +1697,7 @@ function dtEnsure() {
   document.body.appendChild(pop);
   dtState.node = pop;
 
-  /* ── 浮层的三条全局行为（只在第一次创建时绑一次）── */
+  /* 浮层的三条全局行为（只在第一次创建时绑一次） */
   // 1) 点外部关闭。用捕获阶段：不等别人 stopPropagation，避免浮层赖着不走
   document.addEventListener('click', (e) => {
     if (pop.hidden) return;
@@ -1862,7 +1856,7 @@ function dtAttach(input) {
   });
 }
 
-/* ── 工作台事件 ─────────────────────────────────────────── */
+/* 工作台事件 */
 function bindWorkbench() {
   // 空状态投放条：点投放条本身（不点里面的按钮）→ 选文件
   el.wbHero.addEventListener('click', (e) => {
@@ -1879,7 +1873,7 @@ function bindWorkbench() {
   el.wbPickFiles.addEventListener('click', () => wbPick('files'));
   el.wbPickFolder.addEventListener('click', () => wbPick('folder'));
 
-  /* ── 底栏流水线（批次 2，样式改版见用户第 ② 条）────────────
+  /* 底栏流水线（批次 2）
      开关是**按钮**不是 checkbox：点一下就翻转 `aria-pressed`，
      `aria-pressed` 是**唯一真相源**（读取用 wbPipelineActions()、样式用
      `.wb-toggle[aria-pressed="true"]`）—— ☐/☑ 那对方框和 1/2/3/4 序号已按
@@ -2063,7 +2057,7 @@ function bindWorkbench() {
   el.wbDetailToggle.addEventListener('click', () =>
     wbSetDetailCollapsed(!el.detailPanel.classList.contains('collapsed')));
 
-  // ── 发票库入口（v0.6）──────────────────────────────────────────────
+  // 发票库入口（v0.6）
   // 两处入口都只是「切到发票库」。**不在这里弹自定义弹窗**：库里有没有东西、
   // 勾哪几张，都由发票库那一页自己说清楚，入口只负责把人送过去。
   if (el.wbVaultImport) {

@@ -1,19 +1,10 @@
 # -*- coding: utf-8 -*-
 """server/main.py — 报销助手 FastAPI 入口。
 
-架构
-----
-本文件只做三件事：**建服务、挂路由、发静态文件**。
-业务逻辑由 `server/core/` 和各路由承担；本层不含解析/合并算法。
+只做三件事：建服务、挂路由、发静态文件，业务逻辑在 server/core/ 和各路由里。
+只监听 127.0.0.1，发票数据不出本机。
 
-安全
-----
-* 服务**只监听 127.0.0.1**，局域网内其他机器访问不到。
-* 发票数据全程只在本机内存与本机磁盘流转，**不出本机**。
-
-启动
-----
-    python server/main.py            # 或双击项目根目录的「启动.bat」
+启动：python server/main.py，或双击项目根目录的「启动.bat」。
 """
 from __future__ import annotations
 
@@ -23,16 +14,16 @@ import threading
 import time
 import webbrowser
 
-# ── 路径解析：同时支持「开发态」与「PyInstaller 打包后」────────────
+# 路径解析：同时支持「开发态」与「PyInstaller 打包后」
 def _app_root() -> str:
     """应用根目录（其下应有 web/ 与 server/）。
 
-    * **打包后**：PyInstaller 的一次性解包目录 ``sys._MEIPASS``
-      （``web/`` 由 spec 的 datas 放进去，``core`` / ``routes`` 是顶层包）。
-    * **开发态**：项目根目录（本文件的上上级）。
+    打包后用 PyInstaller 的一次性解包目录 sys._MEIPASS
+    （web/ 由 spec 的 datas 放进去，core / routes 是顶层包）；
+    开发态就是项目根目录（本文件的上上级）。
 
-    注意：打包后 ``__file__`` 指向解包目录内的脚本路径，上溯两级通常算不对，
-    因此必须优先判断 ``sys.frozen``。
+    注意：打包后 __file__ 指向解包目录内的脚本路径，上溯两级通常算不对，
+    因此必须优先判断 sys.frozen。
     """
     if getattr(sys, "frozen", False):
         return getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
@@ -66,7 +57,7 @@ from routes import trip as trip_routes        # noqa: E402  v0.4 R4 行程汇总
 from routes import vault as vault_routes      # noqa: E402  发票库（历史发票留存）
 from routes import _shared                    # noqa: E402  旧上传原件迁移
 
-# ── 常量 ────────────────────────────────────────────────────────────
+# 常量
 HOST = "127.0.0.1"          # 只绑定本机回环，绝不 0.0.0.0
 #: 源码版和便携版分开 origin，避免共享浏览器设置。端口冲突时不打开其他实例。
 #: 测试通过 FAPIAO_PORT 显式指定隔离端口，禁止访问真实实例。
@@ -91,7 +82,7 @@ async def local_origin_only(request: Request, call_next):
             return JSONResponse({"ok": False, "error": "请求来源不受信任"}, status_code=403)
     return await call_next(request)
 
-# ── 路由 ────────────────────────────────────────────────────────────
+# 路由
 # 五个业务模块各挂一个前缀，互不干扰；每个 routes 只做 HTTP ⇄ core 的翻译。
 app.include_router(merge_routes.router,   prefix="/api/merge",   tags=["merge"])
 app.include_router(train_routes.router,   prefix="/api/train",   tags=["train"])
@@ -123,10 +114,10 @@ def index():
     return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
 
-# ── 静态资源（css / js / assets）─────────────────────────────────────
+# 静态资源（css / js / assets）
 app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
 
-# ── 预览目录（行程单 / 核对结果在浏览器里看的临时页）──────────────────
+# 预览目录（行程单 / 核对结果在浏览器里看的临时页）
 # StaticFiles 要求目录已存在，所以先建再挂。
 preview_routes.ensure_dir()
 app.mount("/preview", StaticFiles(directory=preview_routes.PREVIEW_DIR), name="preview")
