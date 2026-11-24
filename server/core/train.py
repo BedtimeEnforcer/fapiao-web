@@ -27,8 +27,7 @@ _RE_TRAIN_INVOICE_DATE = re.compile(r'开票日期[:：]\s*(\d{4})\s*年\s*(\d{1
 _RE_TRAIN_STATION = re.compile(r'([一-鿿]+)\s+[A-Z]\d+\s+([一-鿿]+)')
 _RE_TRAIN_NO = re.compile(r'(G\d+|D\d+|K\d+|Z\d+|T\d+|C\d+)')
 _RE_TRAIN_DEPART = re.compile(r'(\d{4}年\d{2}月\d{2}日\s*\d{2}:\d{2})开')
-_RE_TRAIN_DATE = re.compile(r'(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日')
-_RE_TRAIN_SEAT = re.compile(r'(\d+)车(\d+[A-F]?)号')
+_RE_TRAIN_SEAT = re.compile(r'(\d+)车(?:(\d+[A-F]?)号|无座)')
 _RE_TRAIN_SEAT_CLASS = re.compile(
     r'(无座|二等座|一等座|商务座|特等座|软卧|硬卧|硬座|软座|'
     r'下铺|上铺|中铺|动卧|高级软卧|一等卧|二等卧)')
@@ -115,28 +114,25 @@ def parse_train_ticket_text(raw_text, filename=''):
     if m:
         info['train'] = m.group(1)
 
-    # 开车日期时间（优先带「开」的乘车日期）
+    # 「开」标记的是发车时间，开票日期不能用来推断乘车日期。
     m = _RE_TRAIN_DEPART.search(nt)
     if m:
         info['train_date'] = m.group(1)
-    else:
-        m = _RE_TRAIN_DATE.search(nt)
-        if m:
-            info['train_date'] = f"{int(m.group(1))}年{int(m.group(2)):02d}月{int(m.group(3)):02d}日"
 
     # 车厢 / 座位号（与席别分开提取，兼容「下铺/无座」等无「座」字情形）
     m = _RE_TRAIN_SEAT.search(nt)
     if m:
         info['car_no'] = m.group(1)
-        info['seat_no'] = m.group(2)
+        info['seat_no'] = m.group(2) or ''
     m = _RE_TRAIN_SEAT_CLASS.search(nt)
     if m:
         info['seat_class'] = m.group(1)
     parts = []
-    if info['car_no']:
-        parts.append(f"{info['car_no']}车{info['seat_no']}号")
-    elif info['seat_no']:
-        parts.append(f"{info['seat_no']}号")
+    seat_location = f"{info['car_no']}车" if info['car_no'] else ''
+    if info['seat_no']:
+        seat_location += f"{info['seat_no']}号"
+    if seat_location:
+        parts.append(seat_location)
     if info['seat_class'] != '-':
         parts.append(info['seat_class'])
     info['seat'] = ' '.join(parts) if parts else '-'

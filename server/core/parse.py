@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 """core/parse.py — 发票文本提取与字段解析（PDF + OFD）。
 
-提文本只用 pdfplumber，其余第三方库（reportlab/PIL/pypdf）由调用方引入；
-本模块只做纯逻辑，方便单测和 CLI 复用。
+PDF 文字提取使用 pdfplumber，铁路票字体映射失败时由 pypdfium2 后备提取。
 
 extract_pdf_texts 带 (路径, mtime) 内存缓存，正则都预编译到模块级常量。
 """
@@ -96,7 +95,21 @@ def _is_clean_cjk(s):
     return len(re.findall(_CJK, s)) >= 2 and not _RE_STAR_NOISE.search(s)
 
 
-def find_star_item(text):
+_RE_WRAPPED_STAR_ITEM = re.compile(
+    r'^[ \t]*\*(?P<category>[一-鿿]{2,15})\*(?P<head>[一-鿿]+)[ \t]+'
+    r'(?P<columns>[^\r\n]*\d[^\r\n]*)\r?\n[ \t]*(?P<tail>[一-鿿]+)\*'
+    r'(?P<item>[一-鿿][^\s*]{1,14})[ \t]*\r?$', re.M)
+
+
+def _restore_wrapped_star_item(match):
+    # 项目列重复税收大类作为明细的上级分类，数量金额栏会插到两行之间。
+    category = match['category']
+    if match['head'] + match['tail'] == category:
+        return f"*{category}*{match['item']}  {match['columns']}"
+    return match[0]
+
+
+def find_star_item(text, *, normalize=False):
     """在 `*分类*明细` 结构里找真实项目名，返回 (xxx, yyy)；找不到返回 None。
 
     ⚠️ 为什么不能用 re.search 直接取第一个匹配：老版增值税电子普通发票的 PDF 文本层
@@ -124,8 +137,11 @@ def find_star_item(text):
     宁可返回 None（后续走销售方兜底），也不要返回乱码。
     三个消费点（详情弹窗 item_name / 表格标签 / 文件名）共用此函数，保证行为一致。
     """
+    text = _RE_WRAPPED_STAR_ITEM.sub(_restore_wrapped_star_item, text or '')
+    if normalize:
+        text = _normalize_cjk(text)
     cands = []
-    for m in _RE_ITEM.finditer(text or ''):
+    for m in _RE_ITEM.finditer(text):
         cands.append((re.sub(r'\s+', '', m.group(1).strip()),
                       re.sub(r'\s+', '', m.group(2).strip())))
 
@@ -527,6 +543,11 @@ _CJK = r'[一-鿿]'
 # 文本提取缓存：键=(abspath, mtime)，值=(text, err)
 _text_cache = {}
 _text_cache_lock = threading.Lock()
+
+# PDFium 的原生接口不可并发调用，文字提取与缩略图渲染共用此锁。
+PDFIUM_LOCK = threading.Lock()
+_RE_PDF_CID = re.compile(r'\(cid:\d+\)')
+_RE_RAIL_TICKET_NO = re.compile(r'电子客票号\s*[:：]\s*(\d+)')
 _TEXT_CACHE_MAX = 256
 
 
@@ -926,12 +947,42 @@ def extract_xml_text(filepath):
     return '\n'.join(lines), None
 
 
+def has_broken_rail_pdf_text(text: str) -> bool:
+    """铁路客票字段可读，但部分字形只抽出了 CID 占位符。"""
+    return bool(_RE_PDF_CID.search(text) and _RE_RAIL_TICKET_NO.search(text))
+
+
+def _recover_rail_pdf_page(filepath, page_index: int, text: str) -> str:
+    """用 PDFium 重读受影响的页，核对铁路票标题和同一个电子客票号。"""
+    ticket = _RE_RAIL_TICKET_NO.search(text)
+    try:
+        import pypdfium2
+
+        with PDFIUM_LOCK, pypdfium2.PdfDocument(filepath) as pdf:
+            page = pdf[page_index]
+            recovered = page.get_textpage().get_text_bounded().replace('\r\n', '\n').strip()
+    except Exception as exc:
+        _log_runtime(f"铁路客票 PDF 后备文字提取失败（{type(exc).__name__}），保留原提取结果")
+        return text
+    recovered_ticket = _RE_RAIL_TICKET_NO.search(recovered)
+    if ("铁路电子客票" in recovered and recovered_ticket
+            and recovered_ticket.group(1) == ticket.group(1)
+            and not _RE_PDF_CID.search(recovered)):
+        return recovered
+    return text
+
+
 def _extract_pdf_text_inner(filepath):
     texts = []
     try:
         with pdfplumber.open(filepath) as pdf:
-            for page in pdf.pages:
-                t = page.extract_text()
+            for i, page in enumerate(pdf.pages):
+                t = page.extract_text() or ''
+                if has_broken_rail_pdf_text(t):
+                    recovered = _recover_rail_pdf_page(filepath, i, t)
+                    if recovered != t:
+                        texts.append(recovered)
+                        continue
                 if t:
                     texts.append(t)
                 for table in page.extract_tables():
@@ -1496,7 +1547,7 @@ def extract_invoice_fields(text, *, source=''):
 
     # 6. 项目名称（*分类*明细）
     # 用 find_star_item 而非 _RE_ITEM.search：跳过密码区防伪码里的假星号（见函数注释）。
-    _pair = find_star_item(nt)
+    _pair = find_star_item(text, normalize=True)
     if _pair:
         xxx, yyy = _pair
         if any(kw in yyy for kw in STRONG_KW) and not any(kw in xxx for kw in STRONG_KW):

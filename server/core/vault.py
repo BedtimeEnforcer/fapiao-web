@@ -507,7 +507,8 @@ def ingest(paths, metas: MetaMap | None = None) -> dict:
     """把一批原件**复制**进库并登记。
 
     规则（契约逐条）：
-      * 逐份算 MD5；**MD5 已在库里 → skipped+1，绝不覆盖**；
+      * 逐份算 MD5；已入库的文件计入 skipped，原件和副本保持不变；
+      * 重新导入误归类的铁路或住宿 PDF 时，可修正该记录的票面字段；
       * 解析失败但文件可读 → **仍入库**（元数据留空），计入 `added`；
       * 文件读不了 → `failed+1`，原因进 `errors`（最多 `MAX_ERRORS` 条）；
       * `paths` 为空 → `added=0`（不建库、不写盘）。
@@ -539,8 +540,17 @@ def ingest(paths, metas: MetaMap | None = None) -> dict:
                 continue
 
             digest = hashlib.md5(data).hexdigest()
-            # 先查一次库（快路径：绝大多数重复件在这里就返回，不做解析/复制）
+            hit = cache.get(_norm_key(src))
+            # 重复件保留现有副本。以票面明确的客票号或住宿项目修正旧分类。
             if _exists(digest):
+                if _ext_of(src) == "pdf" and hit and _supports_kind_correction(hit):
+                    try:
+                        _correct_cached_invoice_kind(digest, hit)
+                    except sqlite3.Error as exc:
+                        failed += 1
+                        if len(errors) < MAX_ERRORS:
+                            errors.append(f"{name}：发票分类更新失败（{exc}）")
+                        continue
                 skipped += 1
                 continue
 
@@ -552,7 +562,6 @@ def ingest(paths, metas: MetaMap | None = None) -> dict:
             #   * `meta_json` 存的是**这份缓存值本身**（facets 的原始返回）——
             #     将来读回时不需要「9 个列 → 反推 facets」这种有损还原。
             #   未命中时 `raw` 就是现解析的结果，`meta_json` 与列同源、必然一致。
-            hit = cache.get(_norm_key(src))
             if hit is not None:
                 meta = _cols_from_cached(hit)
                 raw = hit
@@ -611,6 +620,31 @@ def ingest(paths, metas: MetaMap | None = None) -> dict:
     s = stats()
     return {"added": added, "skipped": skipped, "failed": failed,
             "errors": errors, "count": s["count"], "bytes": s["bytes"]}
+
+
+def _supports_kind_correction(meta: dict) -> bool:
+    return bool((meta.get("kind") == "train" and meta.get("ticket_no"))
+                or (meta.get("kind") == "hotel" and "住宿" in (meta.get("item_name") or "")))
+
+
+def _correct_cached_invoice_kind(digest: str, parsed: dict) -> None:
+    """只更新曾被当作增值税票的同一份 PDF，保留手工行程字段。"""
+    with _LOCK, closing(_connect()) as con:
+        row = con.execute(
+            "SELECT meta_json FROM invoices WHERE md5 = ? AND kind = 'vat'", (digest,)
+        ).fetchone()
+        if row is None:
+            return
+        updated = journey_info.apply_saved_values(parsed, _from_json(row["meta_json"]))
+        fields = _meta_from(updated)
+        con.execute(
+            "UPDATE invoices SET kind = :kind, label = :label, mid = :mid,"
+            " invoice_no = :invoice_no, invoice_date = :invoice_date, seller = :seller,"
+            " buyer = :buyer, tax_id = :tax_id, amount = :amount, meta_json = :meta_json"
+            " WHERE md5 = :digest AND kind = 'vat'",
+            dict(fields, meta_json=_to_json(updated), digest=digest),
+        )
+        con.commit()
 
 
 class _Duplicate(Exception):

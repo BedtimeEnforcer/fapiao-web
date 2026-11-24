@@ -39,7 +39,7 @@ def _extract_stay_dates(remarks, raw_text):
     return '', ''
 
 
-def parse_hotel_invoices(folder_or_files, is_folder, deduplicate, progress_cb=None):
+def parse_hotel_invoices(folder_or_files, is_folder, deduplicate, progress_cb=None, *, parsed=None):
     """解析住宿发票（支持 .pdf 与 .ofd）。复用 parse.collect_files / DedupRegistry。"""
     file_list = collect_files(folder_or_files, is_folder, ('.pdf', '.ofd'))
     if not file_list:
@@ -54,13 +54,28 @@ def parse_hotel_invoices(folder_or_files, is_folder, deduplicate, progress_cb=No
         if reg and reg.check_md5(fp, filename):
             continue
 
-        raw_text, read_error = extract_pdf_texts(fp)
-        if read_error:
-            failed_files.append({"filename": filename, "reason": read_error})
-            continue
-        info = extract_invoice_fields(raw_text)
-
-        checkin, checkout = _extract_stay_dates(info.get('remarks', ''), raw_text)
+        known = (parsed or {}).get(fp)
+        if known:
+            info = {
+                'seller_name': known.get('seller', ''),
+                'buyer_name': known.get('buyer', ''),
+                'invoice_date': known.get('invoice_date') or known.get('date', ''),
+                'amount': known.get('amount', 0.0),
+                'item_name': known.get('item_name', ''),
+                'invoice_no': known.get('invoice_no', ''),
+                'tax_id': known.get('buyer_tax_id', ''),
+                'seller_tax_id': known.get('seller_tax_id', ''),
+                'drawer': known.get('drawer', ''),
+            }
+            checkin = known.get('checkin', '')
+            checkout = '' if known.get('checkout_inferred') else known.get('checkout', '')
+        else:
+            raw_text, read_error = extract_pdf_texts(fp)
+            if read_error:
+                failed_files.append({"filename": filename, "reason": read_error})
+                continue
+            info = extract_invoice_fields(raw_text)
+            checkin, checkout = _extract_stay_dates(info.get('remarks', ''), raw_text)
 
         review_fields = []
         if not (info['seller_name'] or info['buyer_name']):

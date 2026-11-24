@@ -100,7 +100,8 @@ DEFAULT_HTML_PALETTE = {
 }
 
 _COMPLIANCE = ("数据来源：Supeset/China-GeoData（MIT）· 底图为简化示意，非标准地图 · "
-               "国界、台湾及南海诸岛（含九段线）按国家统一标准表达")
+               "国界、台湾及南海诸岛（含九段线）按国家统一标准表达 · "
+               f"{trainmap.STATION_COORDINATE_CREDIT}")
 _PRIVACY = "本页仅在本机生成与查看，行程数据不上传任何第三方服务"
 
 _DATE_RE = None      # 兼容旧引用：日期/时间解析已统一到 report_html

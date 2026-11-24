@@ -44,12 +44,20 @@ def journey(meta: dict | None) -> dict:
             nights = delta if delta > 0 else None
         return {"checkin": checkin, "checkout": checkout,
                 "checkout_inferred": bool(m.get("checkout_inferred")), "nights": nights}
+    travel_date = m.get("train_date")
+    if kind == "train":
+        # 旧缓存用纯中文日期存下遇到的第一个日期，来源可能是开票日。
+        if not m.get("journey_edited") and re.fullmatch(r"\d{4}年\d{2}月\d{2}日", travel_date or ""):
+            travel_date = ""
+    else:
+        travel_date = travel_date or m.get("date")
     return {"from_": str(m.get("from_") or "").strip(),
             "to_": str(m.get("to_") or "").strip(),
             "from_airport": str(m.get("from_airport") or "").strip(),
             "to_airport": str(m.get("to_airport") or "").strip(),
             "passenger": str(m.get("passenger") or "").strip(),
-            "travel_date": date_value(m.get("train_date") or m.get("date")),
+            "travel_date": date_value(travel_date),
+            "travel_time": str(m.get("train_time") or "") if kind == "train" else "",
             "train": str(m.get("train") or "").strip()}
 
 

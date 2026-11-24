@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
-"""core/rename.py — 发票智能重命名模块。纯标准库。"""
+"""core/rename.py — 发票智能重命名模块。"""
 import os
 import re
 
-from .config import _log_runtime
 # STRONG_KW（星号结构 `*分类*明细` 的判定词清单）与 parse.py 的详情弹窗 item_name
 # 共用同一份真源，从下层 parse 导入，本模块不再自带副本。
 # ⚠️ 方向不能反：rename 依赖 parse（本行 import），若让 parse 反过来 import rename
@@ -271,54 +270,50 @@ def get_invoice_type_label(text, info=None):
     return '发票'
 
 
-def generate_invoice_filename(text, info, orig_path=''):
+def generate_invoice_filename(text, info, orig_path='', *, meta=None):
     """根据发票内容生成规范文件名。
     火车票特殊处理；其余统一使用：项目名称-金额-日期-销售方名称
     保留原始文件扩展名（.ofd/.pdf）。
     """
-    nt = _normalize_cjk(text)
-
-    # ── 火车票特殊处理 ──
-    if is_train_ticket(text):
-        fr, to = '', ''
-        nt_clean = re.sub(r'\d{1,2}日', ' ', nt)
-        # 直接用原始文本（与 parse_train_tickets 相同逻辑）
-        for m in re.findall(r'([一-龥]+)\s+[A-Z]\d+\s+([一-龥]+)', text):
-            if '站' not in m[0] and '站' not in m[1]:
-                fr, to = m
-        _log_runtime(f"火车票站名(原始文本): fr=[{fr}] to=[{to}]")
-        # 清理：去重"站"字，去掉括号内容
-        def _clean_station(s):
-            s = re.sub(r'站站$', '站', s)  # 邯郸站站 → 邯郸站
-            s = re.sub(r'[（(].*[）)]', '', s)  # 去掉括号
-            return s.strip()
-        fr, to = _clean_station(fr), _clean_station(to)
-        _log_runtime(f"火车票站名(清理后): fr=[{fr}] to=[{to}]")
-        d = info.get('invoice_date', '')
+    is_train = meta.get('kind') == 'train' if meta else is_train_ticket(text)
+    if is_train:
+        if meta:
+            ticket = meta
+        else:
+            from .train import parse_train_ticket_text
+            ticket = parse_train_ticket_text(text)
+        nt = _normalize_cjk(text)
+        d = ticket['invoice_date'] or info.get('invoice_date', '')
         dm = re.search(r'(\d{4})[年.\-](\d{1,2})[月.\-](\d{1,2})', d or '')
         d_show = f"{int(dm.group(1))}.{int(dm.group(2))}.{int(dm.group(3))}" if dm else ''
-        amt = f"{info['amount']}元" if info['amount'] > 0 else ''
+        amount = ticket['amount'] if meta else (ticket['amount'] or info['amount'])
         parts = ['火车票']
-        if fr: parts.append(fr)
-        if to: parts.append(to)
-        if d_show: parts.append(d_show)
-        if amt: parts.append(amt)
+        if ticket.get('special_type'):
+            parts.append(ticket['special_type'])
+        else:
+            if '改签' in nt:
+                parts.append('改签')
+            if '退票' in nt:
+                parts.append('退票')
+        stations = (ticket.get('from_'), ticket.get('to_'))
+        if all(s and s != '未知' for s in stations):
+            parts.extend(stations)
+        if d_show:
+            parts.append(d_show)
+        if amount > 0:
+            parts.append(f"{amount}元")
         parts.append('中国铁路')
-        if '退票' in nt: parts.insert(1, '退票')
-        if '改签' in nt: parts.insert(1, '改签')
-        # 发票号码不再拼进文件名（用户：末尾那串代码太长，没必要）
-        _log_runtime(f"火车票最终文件名: {'-'.join(parts)}.pdf")
 
     else:
         # ── 统一规则：项目名称 - 金额 - 日期 - 销售方 ──
-        seller = str(info.get('seller_name', ''))
+        seller = str(meta.get('seller', '') if meta else info.get('seller_name', ''))
         seller = re.sub(r'[买购销]售?方?[方信名称息]*$', '', seller)
         seller = re.sub(r'\s+', '', seller)
         if not seller or seller == '未知':
             # 火车票没有销售方，统一标记
             seller = ''
-        amt = info['amount']
-        d = info.get('invoice_date', '')
+        amt = meta.get('amount', 0.0) if meta else info['amount']
+        d = (meta.get('invoice_date') or meta.get('date', '')) if meta else info.get('invoice_date', '')
 
         # 项目名称提取：*xxx*yyy，xxx优先，无关键词取yyy
         item_clean = ''

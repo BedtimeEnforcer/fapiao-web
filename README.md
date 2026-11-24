@@ -8,7 +8,7 @@ Windows 上本地跑的发票整理工具，起因是自己报销时发票攒了
 
 ## 直接用（便携版）
 
-去 [Releases](https://github.com/BedtimeEnforcer/fapiao-web/releases) 下 `BaoXiaoAssistant-v0.4.1-windows-x64.zip`，解压双击 `报销助手.exe` 就行，不用装 Python。也有单文件的 `BaoXiaoAssistant.exe`，功能一样，ZIP 只是为了绕开 GitHub 对全中文附件名的过滤。只支持 Windows 10/11 x64。第一次启动会解压内置资源，会慢一点，正常。
+在 [v0.4.2 Release](https://github.com/BedtimeEnforcer/fapiao-web/releases/tag/v0.4.2) 下载 `BaoXiaoAssistant-v0.4.2.zip`，解压后双击 `报销助手-v0.4.2.exe`。也可下载 `BaoXiaoAssistant-v0.4.2.exe` 直接运行，两份 EXE 内容一致。支持 Windows 10/11 x64，无需安装 Python。
 
 - 启动后浏览器自动打开 `http://127.0.0.1:8766/`，服务只听本机，外面连不进来。控制台窗口别关，关了就退出了。
 - 先去「设置」填自己的公司抬头和税号。程序里不内置任何抬头，填错了核对结果就别信。
@@ -21,7 +21,7 @@ Windows 上本地跑的发票整理工具，起因是自己报销时发票攒了
 
 局限也说一下：主要吃能提取出文字的电子 PDF 和一部分 OFD，纯扫描件、版式太怪、字段缺失的票经常要手工补；OFD 没有同名 PDF 时没法在页面里预览，也没做通用渲染；没有自动备份，数据丢了找不回来，自己记得备份。
 
-数据默认放在 `%LOCALAPPDATA%\发票助手\` 下面（`data` 是发票库和副本，`uploads` 是上传文件，`reports` 是生成的报告），抬头税号这类偏好存在浏览器本地存储里。把 exe 拷到另一台电脑不会把数据带过去，这个放心。
+数据默认放在 `%LOCALAPPDATA%\发票助手` 下面（`data` 是发票库和副本，`uploads` 是上传文件，`reports` 是生成的报告），抬头税号这类偏好存在浏览器本地存储里。把 exe 拷到另一台电脑不会把数据带过去，这个放心。
 
 ## 跑源码
 

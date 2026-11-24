@@ -201,6 +201,13 @@ function wbHaystack(r) {
   return parts.filter((x) => x != null && x !== '').join(' ').toLowerCase();
 }
 
+function wbRideDate(row) {
+  const date = row.journey?.travel_date;
+  if (row.kind !== 'train' || !date) return '';
+  const time = row.journey.travel_time;
+  return time ? `${date} ${time}` : date;
+}
+
 /** 当前筛选 + 排序后的行。KPI 与表格都基于它，保证数字永远对得上。 */
 function wbVisible() {
   const q = wb.q.trim().toLowerCase();
@@ -217,6 +224,10 @@ function wbVisible() {
   const k = wb.sortKey, dir = wb.sortDir;
   return rows.sort((a, b) => {
     if (k === 'amount') return ((Number(a.amount) || 0) - (Number(b.amount) || 0)) * dir;
+    if (k === 'travel_date') {
+      const left = wbRideDate(a), right = wbRideDate(b);
+      return left && right ? left.localeCompare(right) * dir : Number(!left) - Number(!right);
+    }
     /* 解析状态（用户第 ⑨ 条）：这一列存在的意义就是「方便找需要确认的发票」。
        直接按字符串排会得到 failed < todo < done 之外的怪序（'done' < 'failed' < 'todo'），
        把要处理的两档拆在两头。所以按语义权重排：失败(0) → 待补全(1) → 完成(2)，
@@ -362,7 +373,7 @@ function wbTypeLabel(r) {
 /** 主表格。行高与列宽由 CSS 控制（32px），这里只管内容。 */
 function wbRenderTable(rows) {
   if (!rows.length) {
-    el.wbBody.innerHTML = `<tr><td colspan="10"><div class="empty">`
+    el.wbBody.innerHTML = `<tr><td colspan="11"><div class="empty">`
       + `${wb.rows.length ? '没有符合当前筛选条件的发票' : '还没有发票'}</div></td></tr>`;
     return;
   }
@@ -424,6 +435,7 @@ function wbRenderTable(rows) {
           : '<span class="muted">—</span>')}</td>`
       + `<td class="col-seller" title="${esc(r.seller)}">`
       + `${r.seller ? esc(r.seller) : '<span class="muted">—</span>'}</td>`
+      + `<td class="col-travel-date">${esc(wbRideDate(r))}</td>`
       /* 废弃行显式写 ¥0.00 —— 它跟「没解析出金额」不是一回事：
          这个 0 是后端判废后主动清零的结果，写清楚才不会被人当成解析失败。 */
       + `<td class="col-amount"><span class="amount${r.amount ? '' : ' zero'}">`
@@ -946,7 +958,7 @@ async function wbRunTrip(scope) {
     const { data } = await api(API.tripRun, {
       method: 'POST',
       body: JSON.stringify({
-        paths, out_dir: outDir,
+        paths, scan_id: wb.scanId, out_dir: outDir,
         include_map: true, dedup: true,
         trip_overrides: collectTripOverrides(paths),
       }),

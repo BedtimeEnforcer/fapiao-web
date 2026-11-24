@@ -81,27 +81,13 @@ def _is_transport(inv):
     return _s(inv.get("kind")) in _TRANSPORT_KINDS
 
 
-def _invoices_of(paths, dedup=True, trip_only=False):
-    """真实路径列表 → 解析后的规范发票 dict 列表。
-
-    分两条腿走（**这是与既有火车页最关键的一处不同**）：
-
-    * **交通腿**：`core.facets.extract_invoice_meta(fp)` 逐文件拿元数据
-      （票种单一真源）。`kind == 'noninvoice'`（网约车行程单等）**完全没有 amount**，
-      facets 侧也刻意不填 from_/to_，所以这里补 `amount=0.0` 占位，
-      并交给 `trip.classify_trip` 判成 `available=False` → 落 `excluded`。
-    * **住宿腿**：必须换成 `core.hotel.parse_hotel_invoices`，**不能只靠 facets** ——
-      实测（tests/samples/住宿 18 张）`facets.extract_invoice_meta` 对住宿票
-      `kind='hotel'` 但 `checkin`/`checkout` **一律为空**（那段日期只从备注栏
-      `core/hotel.py::_extract_stay_dates` 里来，facets 不重复实现）。
-      若只读 facets，18 张住宿票会全部被判成「无行程信息」丢进 excluded，
-      住宿分区直接消失 —— 这是第一轮探针实测到的真实故障。
-    """
+def _invoices_of(paths, dedup=True, trip_only=False, parsed=None):
+    """按工作台快照收集结构化票据。直接传文件时保留独立解析入口。"""
     from . import facets as F
-    from . import hotel as _hotel
     from . import journey_info, vault
     from . import parse as _p
 
+    parsed = parsed or {}
     reg = _p.DedupRegistry() if dedup else None
     out, skipped = [], 0
     hotel_files = []
@@ -112,7 +98,7 @@ def _invoices_of(paths, dedup=True, trip_only=False):
         if not fp:
             continue
         try:
-            m = F.extract_invoice_meta(fp)
+            m = parsed.get(fp) or F.extract_invoice_meta(fp)
         except Exception:
             skipped += 1
             continue
@@ -139,10 +125,10 @@ def _invoices_of(paths, dedup=True, trip_only=False):
         inv["amount"] = _num(inv.get("amount"))
         out.append(inv)
 
-    out.extend(_stay_records(hotel_files, dedup, saved))
+    out.extend(_stay_records(hotel_files, dedup, saved, parsed))
     return out, skipped
 
-def _stay_records(files, dedup=True, saved=None):
+def _stay_records(files, dedup=True, saved=None, parsed=None):
     """住宿文件列表 → 与交通腿同形（同键约定）的规范 dict 列表。
 
     `core.hotel.parse_hotel_invoices(folder_or_files, is_folder, deduplicate)`
@@ -157,7 +143,7 @@ def _stay_records(files, dedup=True, saved=None):
     from . import hotel as _hotel
     from . import journey_info
     try:
-        res, _err = _hotel.parse_hotel_invoices(list(files), False, bool(dedup))
+        res, _err = _hotel.parse_hotel_invoices(list(files), False, bool(dedup), parsed=parsed)
     except Exception:
         return []
     recs = (res or {}).get("records") or []
@@ -237,13 +223,13 @@ def list_invoice_files(paths):
     return _list_files(paths)
 
 
-def collect_invoices(paths, *, dedup=True, trip_only=False):
+def collect_invoices(paths, *, dedup=True, trip_only=False, parsed=None):
     """公开入口：输入路径/目录列表 → `(规范发票 dict 列表, skipped)`。
 
     routes 层只要这两样东西就够；解析口径（票种分类）全部由 core 决定。
     """
     files = _list_files(paths)
-    return _invoices_of(files, dedup=dedup, trip_only=trip_only)
+    return _invoices_of(files, dedup=dedup, trip_only=trip_only, parsed=parsed)
 
 
 # ─────────────────────────── 主聚合函数 ───────────────────────────

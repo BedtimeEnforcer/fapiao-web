@@ -29,6 +29,7 @@ import sys
 import threading
 import time
 import uuid
+from contextlib import closing
 
 from fastapi import APIRouter, Response
 from fastapi.responses import FileResponse, JSONResponse
@@ -44,11 +45,14 @@ if _SERVER not in sys.path:
 from core import attach as core_attach, airports, facets, journey_info  # noqa: E402
 from core import trip as core_trip  # noqa: E402  v0.4 R4：行程准入判定的唯一真源
 from core.parse import (  # noqa: E402
+    PDFIUM_LOCK,
     _normalize_company_name,
     _normalize_tax_id,
     extract_invoice_fields,
     extract_pdf_texts,
     file_md5,
+    find_star_item,
+    has_broken_rail_pdf_text,
     ofd_display_fields,
 )
 from core.rename import get_invoice_type_label, mid_class  # noqa: E402
@@ -172,8 +176,20 @@ def _pool_row(fp: str, idx: int, expected_name: str, expected_tax_id: str,
     缓存里**取出来了（`vault.cached_meta_map`），此时**不再调 facets 解析**。
     形状必须与 `facets.extract_invoice_meta` 的返回逐键相同，否则宁可传 None。
     """
-    m = journey_info.effective_meta(
-        meta if isinstance(meta, dict) and meta else facets.extract_invoice_meta(fp))
+    if meta and meta.get("kind") == "vat" and fp.lower().endswith(".pdf"):
+        cached_raw = meta.get("__raw__") or ""
+        raw = cached_raw
+        if not raw or has_broken_rail_pdf_text(raw):
+            raw, _ = extract_pdf_texts(fp)
+        rail = raw != cached_raw and "铁路电子客票" in raw
+        item = find_star_item(raw) if "住宿" in raw else None
+        lodging = item and any("住宿" in field for field in item)
+        if rail or lodging:
+            fresh_meta = facets.extract_invoice_meta(fp)
+            if ((rail and fresh_meta["kind"] == "train" and fresh_meta["ticket_no"])
+                    or (lodging and fresh_meta["kind"] == "hotel")):
+                meta = journey_info.apply_saved_values(fresh_meta, meta)
+    m = journey_info.effective_meta(meta or facets.extract_invoice_meta(fp))
     # ── 第 7 轮 ④：缓存命中时连**票面原文**都从库里取，整张票不读盘、不解析 ──
     #    用户原话「再次从发票库导入，还要二次解析，应该解析过的发票缓存解析结果吧」——
     #    只省掉 facets 是不够的：`extract_pdf_texts`（pdfplumber 抽文字，最贵的一趟）
@@ -200,9 +216,12 @@ def _pool_row(fp: str, idx: int, expected_name: str, expected_tax_id: str,
     #    是对的），于是 46 张火车票的核对列从「通过」掉成「待确认（税号未识别）」。
     #    火车票的税号位置是锚死的 ⇒ 只在这一支里用 facets 取到的真值覆盖核对用的
     #    info，**不改** ③ 的通用口径。（`dict(...)` 是浅拷贝，不动缓存里的对象。）
-    if m.get("buyer_tax_id"):
-        info = dict(info)
-        info["tax_id"] = m.get("buyer_tax_id")
+    if m.get("kind") == "train":
+        info = dict(info, buyer_name=m.get("buyer", ""), seller_name=m.get("seller", ""),
+                    tax_id=m.get("buyer_tax_id", ""), amount=m.get("amount", 0.0),
+                    invoice_no=m.get("invoice_no", ""), invoice_date=m.get("invoice_date", ""))
+    elif m.get("buyer_tax_id"):
+        info = dict(info, tax_id=m["buyer_tax_id"])
     # ⚠️ 文本留着给「点一次干完」流水线的重命名阶段用（generate_invoice_filename
     #    需要票面原文）—— 缓存里存 raw，避免运行阶段再去读盘/重复解析。
     try:
@@ -805,39 +824,21 @@ def thumb(path: str = "", max: str = ""):
 
         import pypdfium2 as pdfium
 
-        doc = pdfium.PdfDocument(p)
-        try:
+        with PDFIUM_LOCK, pdfium.PdfDocument(p) as doc:
             if len(doc) < 1:
                 raise ValueError("PDF 没有页面")
-            page = doc[0]
-            try:
+            with closing(doc[0]) as page:
                 w, h = page.get_size()
                 _w, _h = float(w or 0.0), float(h or 0.0)
                 longest = (_w if _w > _h else _h) or 1.0
                 # pdfium 的 render(scale) 是相对 72dpi 的倍数：输出像素 ≈ pt × scale。
                 # `- 0.5` 是给 pdfium 的取整留余量：直接 `limit / longest` 实测会
                 # 输出 4001（上限 4000 被顶破 1px，round/ceil 都会）。
-                bitmap = page.render(scale=(limit - 0.5) / longest)
-                try:
+                with closing(page.render(scale=(limit - 0.5) / longest)) as bitmap:
                     img = bitmap.to_pil()
                     buf = io.BytesIO()
                     img.save(buf, format="PNG")
                     png = buf.getvalue()
-                finally:
-                    try:
-                        bitmap.close()
-                    except Exception:
-                        pass
-            finally:
-                try:
-                    page.close()
-                except Exception:
-                    pass
-        finally:
-            try:
-                doc.close()
-            except Exception:
-                pass
     except Exception as e:
         return JSONResponse({"ok": False, "error": f"渲染失败：{e}"}, status_code=404)
 

@@ -65,7 +65,7 @@ EDITION = "desktop" if getattr(sys, "frozen", False) else "source"
 PORT = int(os.environ.get("FAPIAO_PORT", "").strip() or (8766 if EDITION == "desktop" else 8765))
 WEB_DIR = os.path.join(_ROOT, "web")
 APP_TITLE = "报销助手"
-VERSION = "0.4.1"
+VERSION = "0.4.2"
 
 app = FastAPI(title=APP_TITLE, version=VERSION, docs_url=None, redoc_url=None)
 app.add_middleware(TrustedHostMiddleware,

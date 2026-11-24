@@ -12,6 +12,7 @@
 数据资产（assets/trainmap/，由 dev/plan/trainmap/build_assets.py 生成）
     china_provinces.json  省级边界 + 南海九段线（含台湾/港澳）
     stations.json         站名 -> [lat, lon, city]
+    stations_supplement.json  补充的离线车站坐标与来源
     cities.json           城市 -> [lat, lon]（站名匹配失败的兜底）
 
 口径约定
@@ -77,6 +78,8 @@ _HK_TW_ABROAD_EXACT = frozenset((
 #: 可以安全做子串匹配的关键词（不会撞上内地站名）
 _HK_TW_ABROAD_SUB = ("香港", "澳门", "台湾")
 
+STATION_COORDINATE_CREDIT = "补充站点：© OpenStreetMap contributors（ODbL，openstreetmap.org/copyright）"
+
 _COMPLIANCE_NOTE = "数据来源：Supeset/China-GeoData（MIT）· 本图为简化示意，非标准地图"
 
 _YEAR_RE = re.compile(r"(\d{4})")
@@ -111,13 +114,26 @@ def load_station_index(path=None):
         base = os.path.dirname(path) if path else asset_path("assets", "trainmap")
         s_name = path or os.path.join(base, "stations.json")
         c_name = os.path.join(os.path.dirname(s_name), "cities.json")
-        idx = {"by_station": {}, "by_city": {}, "alias": {}, "meta": {}}
+        idx = {"by_station": {}, "by_city": {}, "alias": {}, "city_fallback": {}, "meta": {}}
         if os.path.exists(s_name):
             d = _read_json(s_name)
             idx.update({k: d.get(k) or {} for k in ("by_station", "by_city", "alias")})
             idx["meta"] = d.get("_meta") or {}
         if os.path.exists(c_name):
             idx["by_city"] = _read_json(c_name).get("by_city") or idx["by_city"]
+        supplement = os.path.join(base, "stations_supplement.json")
+        if os.path.exists(supplement):
+            extra = _read_json(supplement)
+            for group in ("osm_stations", "reviewed_stations"):
+                for name, coords in extra.get(group, {}).items():
+                    idx["by_station"].setdefault(name, coords)
+            idx["meta"]["count"] = len(idx["by_station"])
+            centers = extra.get("city_fallback_centers", {})
+            for name, station in extra.get("unresolved", {}).items():
+                city = station["city"]
+                coords = centers.get(city, {}).get("coordinates") or idx["by_city"].get(city)
+                if coords:
+                    idx["city_fallback"][name] = [*coords[:2], city]
         _index_cache["station"] = idx
     return _index_cache["station"]
 
@@ -152,7 +168,7 @@ def norm_station_name(name):
 def match_station(name, index):
     """站名 -> 坐标。返回 dict(query/resolved/lat/lon/city/match_type/ok)。
 
-    匹配级别：L1 精确站名 → L2 别名 → L3 去方位词/城市兜底 → L4 未匹配。
+    匹配顺序：精确站名 → 别名 → 站点所属城市 → 站名/城市名称兜底。
     """
     raw = (str(name) if name is not None else "").strip()
     key = norm_station_name(raw)
@@ -179,6 +195,10 @@ def match_station(name, index):
     tgt = alias.get(key)
     if tgt and tgt in by_station:
         return _hit(by_station[tgt], tgt, "alias")
+
+    # 已知所属城市时保留票面站点名称，地图使用城市坐标。
+    if coords := (index.get("city_fallback") or {}).get(key):
+        return _hit(coords, key, "city")
 
     # L3a 去掉末尾方位词（西安北 -> 西安）后按站名/城市兜底
     base = key.rstrip("东南西北")
@@ -527,7 +547,8 @@ def build_trainmap_drawing(stats, *, width=440, height=400, palette=None):
     _text(d, 12, height - 28,
           f"线路粗细 = 乘坐次数   ·   站点大小 = 到访次数（已标注 {len(labeled)} 个高频站）",
           size=6.5, fill=pal.get("card_label", "#64748B"))
-    _text(d, 12, 9, _COMPLIANCE_NOTE, size=5.8, fill=pal.get("note", "#94A3B8"))
+    _text(d, 12, 9, f"{_COMPLIANCE_NOTE} · {STATION_COORDINATE_CREDIT}",
+          size=5.8, fill=pal.get("note", "#94A3B8"))
     return d
 
 

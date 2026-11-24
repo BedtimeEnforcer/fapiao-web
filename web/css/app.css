@@ -671,7 +671,7 @@ table.grid { width: 100%; border-collapse: separate; border-spacing: 0; font-siz
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-/* 列宽：勾选 / 色点 / 文件名 / **发票类型** / 日期 / 销售方 / 金额 / 解析状态 / 处理
+/* 列宽：勾选 / 色点 / 文件名 / 发票类型 / 日期 / 销售方 / 乘车日期 / 金额 / 解析状态
    2026-10-12（用户第 ⑩ 条）重平衡：文件名原来**没有宽度**，吃掉了全部剩余空间，
    1080p 下能占掉半张表；现在 #wbGrid 用 table-layout: fixed，各列给确定宽度，
    文件名收窄并按内容省略号截断，让出来的宽度归「发票类型」新列与销售方。
@@ -697,9 +697,10 @@ table.grid { width: 100%; border-collapse: separate; border-spacing: 0; font-siz
 /* 工作台表格的列宽（**只作用于 #wbGrid**；.grid 是三个表共用的类）：
    fixed 布局 + 百分比，宽度才真正由这里说了算，而不是被最长文件名撑开。 */
 #wbGrid { table-layout: fixed; }
-#wbGrid .col-fname  { width: 30%; }
-#wbGrid .col-type   { width: 13%; }
-#wbGrid .col-seller { width: 20%; max-width: none; }
+#wbGrid .col-fname  { width: 26%; }
+#wbGrid .col-type   { width: 12%; }
+#wbGrid .col-seller { width: 14%; max-width: none; }
+#wbGrid .col-travel-date { width: 146px; font-variant-numeric: tabular-nums; }
 /* 文件名单元格：收窄是给「发票类型」留位，所以这里必须真的截断 */
 #wbGrid td.col-fname .fname {
   display: inline-block; max-width: 100%;

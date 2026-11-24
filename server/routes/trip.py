@@ -38,6 +38,7 @@ from core import vault as core_vault  # noqa: E402
 
 from . import _shared                     # noqa: E402
 from . import preview                     # noqa: E402
+from .pool import _scan_cache_get         # noqa: E402
 
 router = APIRouter()
 
@@ -61,8 +62,11 @@ async def run(payload: dict):
     include_map = bool(p.get("include_map", True))
     include_charts = bool(p.get("include_charts", True))
 
+    scan, _ = _scan_cache_get(str(p.get("scan_id") or ""))
+    parsed = {row["path"]: row["_meta"] for row in (scan or {}).get("rows", [])
+              if row.get("_meta") and not row.get("discarded")}
     invoices, skipped = core_trip_summary.collect_invoices(
-        paths, dedup=dedup, trip_only=True)
+        paths, dedup=dedup, trip_only=True, parsed=parsed)
     if not invoices:
         return JSONResponse({"ok": False, "error": "没有可用于行程单的交通或住宿票"}, status_code=400)
 

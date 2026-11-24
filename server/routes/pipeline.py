@@ -8,7 +8,7 @@
 ----------------------------------------------
 1. **数据源唯一**：一切来自 `POST /api/pool/scan` 的进程内快照 `_SCAN_CACHE`。
    本文件**不重新扫描、不重新读盘解析** —— 票面原文随快照一起存
-   （`pool._pool_row` 的 `_raw` 字段），重命名要用的 `info` 从原文算出。
+   （`_raw`）及已解析字段（`_meta` / `_info`），重命名沿用扫描结果。
    理由见 pool.py `_scan_cache_put` 上方注释：解析次数与「下标漂移」都是事故。
 2. **同步 `def`**：整条链路是 pdfplumber / pypdf 的同步 CPU+IO 循环。
    写成 `async def` 会把事件循环堵死，`/api/pool/run/status` 轮询与
@@ -425,7 +425,7 @@ def _stage_rename(rows: list, out_dir: str, warnings: list, mode: str = "copy"):
         path = pool_routes._row_path(r)
         try:
             new_name = generate_invoice_filename(
-                r.get("_raw") or "", _row_info(r), path)
+                r.get("_raw") or "", _row_info(r), path, meta=r.get("_meta"))
         except Exception as e:                        # 单张算名失败不拖垮整批
             r["run_status"] = "rename_failed"
             counter["failed"] += 1
